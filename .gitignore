@@ -4,6 +4,9 @@ dist
 *.egg-info
 *.pyc
 *.pyo
+*.stdout
+*.stderr
+*.rpm
 env
 .DS_Store
 docs/_build
