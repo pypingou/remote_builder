@@ -2,10 +2,12 @@ import argparse
 import logging
 import shutil
 import subprocess
+import sys
 import tempfile
 import os
 
 import rpyc
+from rpyc.utils.server import ThreadedServer
 
 import remote_builder.server.utils
 from remote_builder.server import exceptions
@@ -163,12 +165,45 @@ class RemoteBuilderService(rpyc.Service):
             return stream.read()
 
 
-if __name__ == "__main__":
-    logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
-    _log.setLevel(logging.DEBUG)
 
-    from rpyc.utils.server import ThreadedServer
+def parse_arguments(args=None):
+    """Set-up the argument parsing."""
+    parser = argparse.ArgumentParser(description="Remote Builder CLI tool")
 
+    parser.add_argument(
+        "--debug",
+        default=False,
+        action="store_true",
+        help="Increase the verbosity of the information displayed",
+    )
+
+    parser.add_argument(
+        "-p", "--port",
+        default=18861,
+        help="Port to the run the server at (detaulf to 18861)",
+    )
+
+    return parser.parse_args(args)
+
+
+def main():
+    """Start of the application."""
+
+    # Parse the arguments
+    args = parse_arguments(sys.argv[1:])
+
+    if args.debug:
+        _log.setLevel(logging.DEBUG)
+
+    return_code = 0
     t = ThreadedServer(RemoteBuilderService, port=18861)
     t.start()
     _log.info("Server running")
+
+    return return_code
+
+
+if __name__ == "__main__":
+    logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
+    _log.setLevel(logging.INFO)
+    sys.exit(main())
