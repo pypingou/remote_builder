@@ -115,7 +115,7 @@ def main():
         host=args.host,
         port=args.port,
         config={
-            "sync_request_timeout": 240,
+            "sync_request_timeout": 69 * 60 * 3, # 3h timeout
         },
     )
 
