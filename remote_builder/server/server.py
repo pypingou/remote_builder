@@ -106,6 +106,7 @@ class RemoteBuilderService(rpyc.Service):
             stderr=subprocess.PIPE,
             cwd=self.tmpdirname.name,
         )
+        outs, errs = proc.communicate()
         _log.debug(f"Installing dependencies finished with the code: {proc.returncode}")
 
         _log.info(f"Building rpm {os.path.join(self.tmpdirname.name, filename)}")
