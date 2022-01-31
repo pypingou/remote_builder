@@ -195,12 +195,12 @@ def main():
     if args.debug:
         _log.setLevel(logging.DEBUG)
 
-    return_code = 0
-    t = ThreadedServer(RemoteBuilderService, port=18861)
+    _log.info(f"Starting server at port {args.port}")
+    t = ThreadedServer(RemoteBuilderService, port=args.port)
     t.start()
     _log.info("Server running")
 
-    return return_code
+    return 0
 
 
 if __name__ == "__main__":
