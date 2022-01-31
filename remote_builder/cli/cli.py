@@ -36,6 +36,18 @@ def parse_arguments(args=None):
         help="Increase the verbosity of the information displayed",
     )
 
+    parser.add_argument(
+        "--host",
+        default="localhost",
+        help="Host of the run the server at (detaulf to localhost)",
+    )
+
+    parser.add_argument(
+        "-p", "--port",
+        default=18861,
+        help="Port to the run the server at (detaulf to 18861)",
+    )
+
     subparser = parser.add_subparsers(title="actions")
 
     # refresh-gitolite
@@ -66,6 +78,10 @@ def do_rpmbuild(conn, args):
 
     _log.info(f"Building the source rpm:  {args.source_rpm}")
     outs, errs, returncode = conn.root.build_srpm(srpm_filename)
+    if returncode == 0:
+        _log.info("  RPM built sucessfully")
+    else:
+        _log.info("  Failed to build the RPMs")
     _log.debug(f"Return code: {returncode}")
     with open(f"{srpm_filename}.stdout", "w") as stream:
         stream.write(outs.decode("utf-8"))
@@ -95,8 +111,8 @@ def main():
         _log.setLevel(logging.DEBUG)
 
     conn = rpyc.connect(
-        host="localhost",
-        port=18861,
+        host=args.host,
+        port=args.port,
         config={
             "sync_request_timeout": 240,
         },
