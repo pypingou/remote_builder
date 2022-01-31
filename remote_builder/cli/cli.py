@@ -110,6 +110,7 @@ def main():
     if args.debug:
         _log.setLevel(logging.DEBUG)
 
+    _log.debug(f"Connecting to {args.host}:{args.port}")
     conn = rpyc.connect(
         host=args.host,
         port=args.port,
