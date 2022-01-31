@@ -188,6 +188,8 @@ def parse_arguments(args=None):
 
 def main():
     """Start of the application."""
+    logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
+    _log.setLevel(logging.INFO)
 
     # Parse the arguments
     args = parse_arguments(sys.argv[1:])
@@ -204,6 +206,4 @@ def main():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
-    _log.setLevel(logging.INFO)
     sys.exit(main())
