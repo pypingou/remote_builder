@@ -11,6 +11,7 @@ from rpyc.utils.server import ThreadedServer
 
 import remote_builder.server.utils
 from remote_builder.server import exceptions
+from remote_builder.server import containers
 
 _log = logging.getLogger(__name__)
 
@@ -26,6 +27,14 @@ def needs_rpmbuild(func):
 def needs_dnf_plugins(func):
     def inner(*args):
         subprocess.check_output(["rpm", "-q", "dnf-plugins-core"])
+        return func(*args)
+
+    return inner
+
+
+def needs_podman(func):
+    def inner(*args):
+        subprocess.check_output(["rpm", "-q", "podman"])
         return func(*args)
 
     return inner
@@ -57,6 +66,43 @@ class RemoteBuilderService(rpyc.Service):
         if not self.tmpdirname:
             _log.info("No workding directory set")
             raise exceptions.BaseRemoteBuilderError(f"No working directory set")
+
+    def exposed_create_builder(self, running_port=18861):
+        """Create a podman container which will be to build the package."""
+        containerfile = os.path.join(self.tmpdirname.name, "Containerfile_builder")
+        _log.info(
+            f"Writing down the Dockerfile for builders at {containerfile}"
+        )
+        with open(containerfile, "wb") as out_file:
+            out_file.write(containers.BUILDER_CONTAINER.encode("utf-8"))
+
+        _log.info("Building builder container")
+        cmd = ["podman", "build", "-f", containerfile, "--rm", "-t", "rs_builder"]
+        _log.debug(f"Command: {' '.join(cmd)}")
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=self.tmpdirname.name,
+        )
+        outs, errs = proc.communicate()
+        image_id = outs.decode("utf-8").strip().split("\n")[-1]
+        _log.debug(f"  Building the container finished with the code: {proc.returncode}")
+        _log.info(f"Container image built: {image_id}")
+
+        _log.info("Starting builder container")
+        cmd = ["podman", "run", "-dt", "-p", f"{running_port + 1}:18861/tcp", "--rm", image_id]
+        _log.debug(f"Command: {' '.join(cmd)}")
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=self.tmpdirname.name,
+        )
+        outs, errs = proc.communicate()
+        _log.debug(f"  Building the container finished with the code: {proc.returncode}")
+
+        return [proc.returncode, outs.decode("utf-8"), running_port + 1]
 
     def exposed_create_workdir(self):
         """Create a temporary directory to be used as a work directory."""
@@ -117,7 +163,7 @@ class RemoteBuilderService(rpyc.Service):
         outs, errs = proc.communicate()
         _log.debug(f"Installing dependencies finished with the code: {proc.returncode}")
 
-        return tuple([outs, errs, proc.returncode])
+        return [outs, errs, proc.returncode]
 
     @needs_rpmbuild
     def exposed_build_srpm(self, name):
@@ -157,7 +203,7 @@ class RemoteBuilderService(rpyc.Service):
         outs, errs = proc.communicate()
         _log.debug("RPM built")
 
-        return tuple([outs, errs, proc.returncode])
+        return [outs, errs, proc.returncode]
 
     def exposed_retrieve_rpm_lists(self, include_srpm=False):
         """Retrieve the RPMs built remotely."""
