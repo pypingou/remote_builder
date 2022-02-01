@@ -101,6 +101,7 @@ class RemoteBuilderService(rpyc.Service):
             cwd=self.tmpdirname.name,
         )
         outs, errs = proc.communicate()
+        _log.info(f"Container built: {outs.decode('utf-8')}")
         _log.debug(f"  Building the container finished with the code: {proc.returncode}")
 
         return [proc.returncode, outs.decode("utf-8"), running_port + 1]
