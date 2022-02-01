@@ -70,14 +70,34 @@ def do_rpmbuild(conn, args):
         raise OSError("File not found: %s", args.source_rpm)
 
     conn.root.create_workdir()
+
+    _log.info("Creating the builder container")
+    returncode, image_id, new_port = conn.root.create_builder(args.port)
+    if returncode == 0:
+        _log.info("  Container created sucessfully")
+    else:
+        _log.info("  Failed to create container")
+        return returncode
+
+    _log.info(f"Connecting to the builder container at: {args.host}:{new_port}")
+    builder = rpyc.connect(
+        host=args.host,
+        port=new_port,
+        config={
+            "sync_request_timeout": 69 * 60 * 3, # 3h timeout
+        },
+        keepalive=True,
+    )
+    builder.root.create_workdir()
+
     srpm_filename = os.path.basename(args.source_rpm)
 
     _log.info(f"Sending the source rpm:   {args.source_rpm}")
     with open(args.source_rpm, "rb") as stream:
-        conn.root.write_srpm(srpm_filename, stream.read())
+        builder.root.write_srpm(srpm_filename, stream.read())
 
     _log.info(f"Installing build dependencies of:  {args.source_rpm}")
-    outs, errs, returncode = conn.root.install_build_dependencies(srpm_filename)
+    outs, errs, returncode = builder.root.install_build_dependencies(srpm_filename)
     if returncode == 0:
         _log.info("  Dependencies installed sucessfully")
     else:
@@ -85,7 +105,7 @@ def do_rpmbuild(conn, args):
         return returncode
 
     _log.info(f"Building the source rpm:  {args.source_rpm}")
-    outs, errs, returncode = conn.root.build_srpm(srpm_filename)
+    outs, errs, returncode = builder.root.build_srpm(srpm_filename)
     if returncode == 0:
         _log.info("  RPM built sucessfully")
     else:
@@ -98,7 +118,7 @@ def do_rpmbuild(conn, args):
     _log.info(f"  stdout log written in: {srpm_filename}.stdout")
     _log.info(f"  stderr log written in: {srpm_filename}.stderr")
 
-    rpms = conn.root.exposed_retrieve_rpm_lists()
+    rpms = builder.root.exposed_retrieve_rpm_lists()
     _log.info(f"RPMs built: {' '.join(rpms)}")
 
     for rpm in rpms:
