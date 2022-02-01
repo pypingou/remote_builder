@@ -23,6 +23,14 @@ def needs_rpmbuild(func):
     return inner
 
 
+def needs_dnf_plugins(func):
+    def inner(*args):
+        subprocess.check_output(["rpm", "-q", "dnf-plugins-core"])
+        return func(*args)
+
+    return inner
+
+
 def secure_filename(name):
     filename = remote_builder.server.utils.secure_filename(name)
     if not filename:
@@ -85,8 +93,8 @@ class RemoteBuilderService(rpyc.Service):
                     rpms.append(os.path.join(dirpath, filename))
         return rpms
 
-    @needs_rpmbuild
-    def exposed_build_srpm(self, name):
+    @needs_dnf_plugins
+    def exposed_install_build_dependencies(self, name):
         """Build the specified source rpm."""
         self._checks()
         filename = secure_filename(name)
@@ -108,6 +116,18 @@ class RemoteBuilderService(rpyc.Service):
         )
         outs, errs = proc.communicate()
         _log.debug(f"Installing dependencies finished with the code: {proc.returncode}")
+
+        return tuple([outs, errs, proc.returncode])
+
+    @needs_rpmbuild
+    def exposed_build_srpm(self, name):
+        """Build the specified source rpm."""
+        self._checks()
+        filename = secure_filename(name)
+
+        if not os.path.exists(os.path.join(self.tmpdirname.name, filename)):
+            _log.info(f"Could not find the srpm: {name} to build")
+            raise exceptions.BaseRemoteBuilderError(f"Could not file the file: {name}")
 
         _log.info(f"Building rpm {os.path.join(self.tmpdirname.name, filename)}")
         cmd = [
@@ -164,7 +184,6 @@ class RemoteBuilderService(rpyc.Service):
         _log.info(f"Retrieving the file {fullpath}")
         with open(fullpath, "rb") as stream:
             return stream.read()
-
 
 
 def parse_arguments(args=None):

@@ -76,6 +76,14 @@ def do_rpmbuild(conn, args):
     with open(args.source_rpm, "rb") as stream:
         conn.root.write_srpm(srpm_filename, stream.read())
 
+    _log.info(f"Installing build dependencies of:  {args.source_rpm}")
+    outs, errs, returncode = conn.root.install_build_dependencies(srpm_filename)
+    if returncode == 0:
+        _log.info("  Dependencies installed sucessfully")
+    else:
+        _log.info("  Failed to install dependencies")
+        return returncode
+
     _log.info(f"Building the source rpm:  {args.source_rpm}")
     outs, errs, returncode = conn.root.build_srpm(srpm_filename)
     if returncode == 0:
