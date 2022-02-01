@@ -25,6 +25,30 @@ def _parser_rpmbuild(subparser):
     local_parser.set_defaults(func=do_rpmbuild)
 
 
+def _parser_clean_images(subparser):
+    """Set up the CLI argument parser for the clean-images action.
+
+    :arg subparser: an argparse subparser allowing to have action's specific
+        arguments
+
+    """
+    local_parser = subparser.add_parser(
+        "clean-images", help="Clean all the remote_builder related images on the server"
+    )
+    local_parser.add_argument(
+        "--image",
+        default=None,
+        help="ID of the image to delete. If none is provided, all the images are deleted.",
+    )
+    local_parser.add_argument(
+        "--dry-run",
+        default=False,
+        action="store_true",
+        help="Lists the containers and images who would be deleted, don't actually delete them",
+    )
+    local_parser.set_defaults(func=do_clean_images)
+
+
 def parse_arguments(args=None):
     """Set-up the argument parsing."""
     parser = argparse.ArgumentParser(description="Remote Builder CLI tool")
@@ -52,6 +76,8 @@ def parse_arguments(args=None):
 
     # rpmbuild
     _parser_rpmbuild(subparser)
+    # clean-images
+    _parser_clean_images(subparser)
 
     return parser.parse_args(args)
 
@@ -125,6 +151,47 @@ def do_rpmbuild(conn, args):
         _log.info(f"Retrieving file {rpm}")
         with open(os.path.basename(rpm), "wb") as stream:
             stream.write(builder.root.exposed_retrieve_file(rpm))
+
+
+def do_clean_images(conn, args):
+    """Clean remote_builders related images.
+
+    :arg conn: rpyc.core.protocol.Connection object connecting the client to the remote server.
+    :arg args: the argparse object returned by ``parse_arguments()``.
+
+    """
+    _log.debug("image:       %s", args.image)
+    _log.debug("dry_run:     %s", args.dry_run)
+
+    images, stderr, returncode = conn.root.list_images()
+    if returncode == 0:
+        _log.info("  Container created sucessfully")
+    else:
+        _log.info("  Failed to create container")
+        print(stderr)
+        return returncode
+
+    if args.dry_run:
+        if args.image:
+            if args.image in images:
+                _log.info(f"Would delete image {args.image}")
+            else:
+                _log.info(f"Container {args.image} not found on the server.")
+        else:
+            _log.info(f"Would delete image(s): {' '.join(images)}")
+    else:
+        if args.image:
+            if args.image in images:
+                outcodes = conn.root.clean_images([args.image])
+            else:
+                _log.info(f"Container {args.image} not found on the server.")
+        else:
+            outcodes = conn.root.clean_images(images)
+
+        if set(outcodes) != set([0]):
+            _log.info("Failed to clean all the container images on the server.")
+        else:
+            _log.info("Successfully cleaned all the container images on the server.")
 
 
 def main():

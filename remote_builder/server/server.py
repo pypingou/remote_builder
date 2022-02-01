@@ -1,5 +1,6 @@
 import argparse
 import logging
+import json
 import shutil
 import subprocess
 import sys
@@ -230,6 +231,51 @@ class RemoteBuilderService(rpyc.Service):
         _log.info(f"Retrieving the file {fullpath}")
         with open(fullpath, "rb") as stream:
             return stream.read()
+
+    @needs_podman
+    def exposed_list_images(self):
+        """Returns the list of image IDs for images related to remote_builder."""
+        _log.info("Retrieving the list of podman images")
+        cmd = ["podman", "images", "--format", "json"]
+        _log.debug(f"Command: {' '.join(cmd)}")
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        outs, errs = proc.communicate()
+        _log.debug(f"Retrieving podman images finished with the code: {proc.returncode}")
+        if proc.returncode != 0:
+            return [[], errs, proc.returncode]
+
+        data = json.loads(outs.decode("utf-8"))
+        output = []
+        for image in data:
+            for name in image.get("Names", []):
+                if "rs_builder" in name:
+                    output.append(image.get("Id"))
+                    break
+
+        return [output, errs, proc.returncode]
+
+    @needs_podman
+    def exposed_clean_images(self, images):
+        """Delete the images specified in the provided list."""
+        _log.info(f"Deleting the podman images: {' '.join(images)}")
+        outcodes = []
+        for image in images:
+            cmd = ["podman", "rmi", image, "-f"]
+            _log.debug(f"Command: {' '.join(cmd)}")
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            proc.communicate()
+            outcodes.append(proc.returncode)
+            _log.debug(f"Deleting podman images {image} finished with the code: {proc.returncode}")
+
+        return outcodes
 
 
 def parse_arguments(args=None):
