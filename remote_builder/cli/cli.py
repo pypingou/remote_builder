@@ -50,7 +50,7 @@ def parse_arguments(args=None):
 
     subparser = parser.add_subparsers(title="actions")
 
-    # refresh-gitolite
+    # rpmbuild
     _parser_rpmbuild(subparser)
 
     return parser.parse_args(args)
@@ -124,7 +124,7 @@ def do_rpmbuild(conn, args):
     for rpm in rpms:
         _log.info(f"Retrieving file {rpm}")
         with open(os.path.basename(rpm), "wb") as stream:
-            stream.write(conn.root.exposed_retrieve_file(rpm))
+            stream.write(builder.root.exposed_retrieve_file(rpm))
 
 
 def main():
