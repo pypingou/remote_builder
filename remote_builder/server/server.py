@@ -95,7 +95,7 @@ class RemoteBuilderService(rpyc.Service):
 
     @needs_dnf_plugins
     def exposed_install_build_dependencies(self, name):
-        """Build the specified source rpm."""
+        """Install the build dependencies of the specified source rpm."""
         self._checks()
         filename = secure_filename(name)
 
