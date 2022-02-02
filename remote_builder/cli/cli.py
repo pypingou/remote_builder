@@ -194,11 +194,20 @@ def do_rpmbuild(config, host, conn, args):
     conn.root.create_workdir()
 
     _log.info("Creating the builder container")
-    returncode, image_id, new_port = conn.root.create_builder(args.port)
+    returncode, image_id, stderr = conn.root.create_builder()
     if returncode == 0:
-        _log.info("  Container created sucessfully")
+        _log.info("   Container created sucessfully")
     else:
-        _log.info("  Failed to create container")
+        _log.info("   Failed to create container")
+        return returncode
+
+    _log.info("Starting the builder container")
+    returncode, container_id, stderr, new_port = conn.root.start_builder(image_id, args.port)
+    if returncode == 0:
+        _log.info("   Container started sucessfully")
+    else:
+        _log.info("  Failed to start container")
+        print(stderr )
         return returncode
 
     builder = _connect(config, host, new_port)
@@ -206,31 +215,32 @@ def do_rpmbuild(config, host, conn, args):
 
     srpm_filename = os.path.basename(args.source_rpm)
 
-    _log.info(f"Sending the source rpm:   {args.source_rpm}")
+    _log.info(f"Uploading the source rpm:           {args.source_rpm}")
     with open(args.source_rpm, "rb") as stream:
         builder.root.write_srpm(srpm_filename, stream.read())
 
-    _log.info(f"Installing build dependencies of:  {args.source_rpm}")
+    _log.info(f"Installing build dependencies of:   {args.source_rpm}")
     outs, errs, returncode = builder.root.install_build_dependencies(srpm_filename)
     if returncode == 0:
-        _log.info("  Dependencies installed sucessfully")
+        _log.info("   Dependencies installed sucessfully")
     else:
-        _log.info("  Failed to install dependencies")
+        _log.info("   Failed to install dependencies")
+        print(stderr)
         return returncode
 
-    _log.info(f"Building the source rpm:  {args.source_rpm}")
+    _log.info(f"Building the source rpm:            {args.source_rpm}")
     outs, errs, returncode = builder.root.build_srpm(srpm_filename)
     if returncode == 0:
-        _log.info("  RPM built sucessfully")
+        _log.info("   RPM built sucessfully")
     else:
-        _log.info("  Failed to build the RPMs")
+        _log.info("   Failed to build the RPMs")
     _log.debug(f"Return code: {returncode}")
     with open(f"{srpm_filename}.{host}.stdout", "w") as stream:
         stream.write(outs.decode("utf-8"))
     with open(f"{srpm_filename}.{host}.stderr", "w") as stream:
         stream.write(errs.decode("utf-8"))
-    _log.info(f"  stdout log written in: {srpm_filename}.{host}.stdout")
-    _log.info(f"  stderr log written in: {srpm_filename}.{host}.stderr")
+    _log.info(f"   stdout log written in: {srpm_filename}.{host}.stdout")
+    _log.info(f"   stderr log written in: {srpm_filename}.{host}.stderr")
 
     rpms = builder.root.exposed_retrieve_rpm_lists()
     _log.info(f"RPMs built: {' '.join(rpms)}")
@@ -239,6 +249,15 @@ def do_rpmbuild(config, host, conn, args):
         _log.info(f"Retrieving file {rpm}")
         with open(os.path.basename(rpm), "wb") as stream:
             stream.write(builder.root.exposed_retrieve_file(rpm))
+
+    _log.info("Stopping the builder container")
+    returncode, outs, errs = conn.root.stop_builder(container_id)
+    if returncode == 0:
+        _log.info("   Container stopped sucessfully")
+    else:
+        _log.info("   Failed to stop container")
+        print(errs)
+        return returncode
 
 
 def do_clean_images(config, host, conn, args):
@@ -253,9 +272,9 @@ def do_clean_images(config, host, conn, args):
 
     images, stderr, returncode = conn.root.list_images()
     if returncode == 0:
-        _log.info("  List of container retrieved sucessfully")
+        _log.info("   List of container retrieved sucessfully")
     else:
-        _log.info("  Failed to retrieve the list of containers")
+        _log.info("   Failed to retrieve the list of containers")
         print(stderr)
         return returncode
 

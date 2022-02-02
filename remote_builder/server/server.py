@@ -68,7 +68,7 @@ class RemoteBuilderService(rpyc.Service):
             _log.info("No workding directory set")
             raise exceptions.BaseRemoteBuilderError(f"No working directory set")
 
-    def exposed_create_builder(self, running_port=18861):
+    def exposed_create_builder(self):
         """Create a podman container which will be to build the package."""
         containerfile = os.path.join(self.tmpdirname.name, "Containerfile_builder")
         _log.info(
@@ -91,20 +91,42 @@ class RemoteBuilderService(rpyc.Service):
         _log.debug(f"  Building the container finished with the code: {proc.returncode}")
         _log.info(f"Container image built: {image_id}")
 
+        return [proc.returncode, image_id, errs]
+
+    def exposed_start_builder(self, image_id, running_port=18861):
+        """Start a podman container which will be to build the package."""
+
         _log.info("Starting builder container")
-        cmd = ["podman", "run", "-dt", "-p", f"{running_port + 1}:18861/tcp", "--rm", image_id]
+        new_port = running_port + 1
+        cmd = ["podman", "run", "-d", "-p", f"{new_port}:18861/tcp", "--rm", image_id]
         _log.debug(f"Command: {' '.join(cmd)}")
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            cwd=self.tmpdirname.name,
         )
         outs, errs = proc.communicate()
-        _log.info(f"Container started: {errs.decode('utf-8')}")
-        _log.debug(f"  Building the container finished with the code: {proc.returncode}")
+        _log.info(f"Container started: {outs.decode('utf-8').strip()}")
+        _log.debug(f"  Starting the container finished with the code: {proc.returncode}")
 
-        return [proc.returncode, outs.decode("utf-8"), running_port + 1]
+        return [proc.returncode, outs.decode("utf-8").strip(), errs.decode("utf-8").strip(), new_port]
+
+    def exposed_stop_builder(self, container_id):
+        """Stop a running podman container."""
+
+        _log.info("Stopping builder container")
+        cmd = ["podman", "stop", container_id]
+        _log.debug(f"Command: {' '.join(cmd)}")
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        outs, errs = proc.communicate()
+        _log.info(f"Container stopped: {outs.decode('utf-8').strip()}")
+        _log.debug(f"  Stopping the container finished with the code: {proc.returncode}")
+
+        return [proc.returncode, outs.decode("utf-8"), errs.decode("utf-8")]
 
     def exposed_create_workdir(self):
         """Create a temporary directory to be used as a work directory."""
