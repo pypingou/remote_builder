@@ -238,7 +238,7 @@ def do_rpmbuild(config, host, conn, args):
         _log.info("   Failed to build the RPMs")
     _log.debug(f"Return code: {returncode}")
     with open(f"{srpm_filename}.{host}.stdout", "w") as stream:
-        stream.write(outs.decode("utf-8"))
+        stream.write(outs)
     with open(f"{srpm_filename}.{host}.stderr", "w") as stream:
         stream.write(errs)
     _log.info(f"   stdout log written in: {srpm_filename}.{host}.stdout")
