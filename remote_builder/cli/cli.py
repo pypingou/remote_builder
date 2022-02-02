@@ -225,12 +225,12 @@ def do_rpmbuild(config, host, conn, args):
     else:
         _log.info("  Failed to build the RPMs")
     _log.debug(f"Return code: {returncode}")
-    with open(f"{srpm_filename}.stdout", "w") as stream:
+    with open(f"{srpm_filename}.{host}.stdout", "w") as stream:
         stream.write(outs.decode("utf-8"))
-    with open(f"{srpm_filename}.stderr", "w") as stream:
+    with open(f"{srpm_filename}.{host}.stderr", "w") as stream:
         stream.write(errs.decode("utf-8"))
-    _log.info(f"  stdout log written in: {srpm_filename}.stdout")
-    _log.info(f"  stderr log written in: {srpm_filename}.stderr")
+    _log.info(f"  stdout log written in: {srpm_filename}.{host}.stdout")
+    _log.info(f"  stderr log written in: {srpm_filename}.{host}.stderr")
 
     rpms = builder.root.exposed_retrieve_rpm_lists()
     _log.info(f"RPMs built: {' '.join(rpms)}")
