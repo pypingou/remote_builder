@@ -280,6 +280,10 @@ def do_clean_images(config, host, conn, args):
         print(stderr)
         return returncode
 
+    if not images:
+        _log.info(f"No relevant images retrieved on the host {host}")
+        return 0
+
     if args.dry_run:
         if args.image:
             if args.image in images:
