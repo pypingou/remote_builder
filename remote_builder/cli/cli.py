@@ -225,10 +225,9 @@ def do_rpmbuild(config, host, conn, args):
         _log.info("   Dependencies installed sucessfully")
     else:
         _log.info("   Failed to install dependencies")
-        print(stderr)
-        return returncode
         print(outs)
         print(errs)
+        return returncode
 
     _log.info(f"Building the source rpm:            {args.source_rpm}")
     returncode, outs, errs = builder.root.build_srpm(srpm_filename)
