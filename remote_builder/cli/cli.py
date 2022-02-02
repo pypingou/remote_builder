@@ -288,7 +288,10 @@ def main():
     # Parse the arguments
     args = parse_arguments(sys.argv[1:])
 
-    logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        format="%(asctime)-10s %(levelname)-6s %(message)s",
+        datefmt="%H:%M:%S",
+    )
     _log.setLevel(logging.INFO)
     if args.debug:
         _log.setLevel(logging.DEBUG)
