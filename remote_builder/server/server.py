@@ -49,6 +49,24 @@ def secure_filename(name):
     return filename
 
 
+def _run_command(cmd, cwd=None):
+    """Run the specified command and return its stdout, stderr and returncode. """
+    _log.debug(f"   Command: {' '.join(cmd)}")
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=cwd,
+    )
+    outs, errs = proc.communicate()
+    _log.debug(f"   Command finished with the code: {proc.returncode}")
+    return [
+        proc.returncode,
+        outs.decode("utf-8").strip(),
+        errs.decode("utf-8").strip(),
+    ]
+
+
 class RemoteBuilderService(rpyc.Service):
     tempdirname = None
 
@@ -79,19 +97,12 @@ class RemoteBuilderService(rpyc.Service):
 
         _log.info("Building builder container")
         cmd = ["podman", "build", "-f", containerfile, "--rm", "-t", "rs_builder"]
-        _log.debug(f"Command: {' '.join(cmd)}")
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=self.tmpdirname.name,
-        )
-        outs, errs = proc.communicate()
-        image_id = outs.decode("utf-8").strip().split("\n")[-1]
-        _log.debug(f"  Building the container finished with the code: {proc.returncode}")
+        returncode, outs, errs = _run_command(cmd)
+
+        image_id = outs.split("\n")[-1]
         _log.info(f"Container image built: {image_id}")
 
-        return [proc.returncode, image_id, errs]
+        return [returncode, image_id, errs]
 
     def exposed_start_builder(self, image_id, running_port=18861):
         """Start a podman container which will be to build the package."""
@@ -99,34 +110,20 @@ class RemoteBuilderService(rpyc.Service):
         _log.info("Starting builder container")
         new_port = running_port + 1
         cmd = ["podman", "run", "-d", "-p", f"{new_port}:18861/tcp", "--rm", image_id]
-        _log.debug(f"Command: {' '.join(cmd)}")
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        outs, errs = proc.communicate()
-        _log.info(f"Container started: {outs.decode('utf-8').strip()}")
-        _log.debug(f"  Starting the container finished with the code: {proc.returncode}")
+        returncode, outs, errs = _run_command(cmd)
+        _log.info(f"Container started: {outs}")
 
-        return [proc.returncode, outs.decode("utf-8").strip(), errs.decode("utf-8").strip(), new_port]
+        return [returncode, outs, errs, new_port]
 
     def exposed_stop_builder(self, container_id):
         """Stop a running podman container."""
 
         _log.info("Stopping builder container")
         cmd = ["podman", "stop", container_id]
-        _log.debug(f"Command: {' '.join(cmd)}")
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        outs, errs = proc.communicate()
-        _log.info(f"Container stopped: {outs.decode('utf-8').strip()}")
-        _log.debug(f"  Stopping the container finished with the code: {proc.returncode}")
+        returncode, outs, errs = _run_command(cmd)
+        _log.info(f"Container stopped: {outs}")
 
-        return [proc.returncode, outs.decode("utf-8"), errs.decode("utf-8")]
+        return [returncode, outs, errs]
 
     def exposed_create_workdir(self):
         """Create a temporary directory to be used as a work directory."""
@@ -177,17 +174,9 @@ class RemoteBuilderService(rpyc.Service):
             f"Installing build dependencies rpm {os.path.join(self.tmpdirname.name, filename)}"
         )
         cmd = ["dnf", "builddep", "-y", os.path.join(self.tmpdirname.name, filename)]
-        _log.debug(f"Command: {' '.join(cmd)}")
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=self.tmpdirname.name,
-        )
-        outs, errs = proc.communicate()
-        _log.debug(f"Installing dependencies finished with the code: {proc.returncode}")
+        returncode, outs, errs = _run_command(cmd, cwd=self.tmpdirname.name)
 
-        return [outs, errs, proc.returncode]
+        return [returncode, outs, errs]
 
     @needs_rpmbuild
     def exposed_build_srpm(self, name):
@@ -217,17 +206,10 @@ class RemoteBuilderService(rpyc.Service):
             "-D",
             "%_rpmdir %{_topdir}",
         ]
-        _log.debug(f"Command: {' '.join(cmd)}")
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=self.tmpdirname.name,
-        )
-        outs, errs = proc.communicate()
+        returncode, outs, errs = _run_command(cmd, cwd=self.tmpdirname.name)
         _log.debug("RPM built")
 
-        return [outs, errs, proc.returncode]
+        return [returncode, outs, errs]
 
     def exposed_retrieve_rpm_lists(self, include_srpm=False):
         """Retrieve the RPMs built remotely."""
@@ -260,26 +242,19 @@ class RemoteBuilderService(rpyc.Service):
         """Returns the list of image IDs for images related to remote_builder."""
         _log.info("Retrieving the list of podman images")
         cmd = ["podman", "images", "--format", "json"]
-        _log.debug(f"Command: {' '.join(cmd)}")
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        outs, errs = proc.communicate()
-        _log.debug(f"Retrieving podman images finished with the code: {proc.returncode}")
-        if proc.returncode != 0:
-            return [[], errs, proc.returncode]
+        returncode, outs, errs = _run_command(cmd)
 
-        data = json.loads(outs.decode("utf-8"))
         output = []
-        for image in data:
-            for name in image.get("Names", []):
-                if "rs_builder" in name:
-                    output.append(image.get("Id"))
-                    break
+        if returncode == 0:
+            data = json.loads(outs)
+            for image in data:
+                for name in image.get("Names", []):
+                    if "rs_builder" in name:
+                        output.append(image.get("Id"))
+                        break
+        _log.debug(f"Images Id retrieved: {' '.join(output)}")
 
-        return [output, errs, proc.returncode]
+        return [returncode, outs, errs, output]
 
     @needs_podman
     def exposed_clean_images(self, images):
@@ -288,15 +263,9 @@ class RemoteBuilderService(rpyc.Service):
         outcodes = []
         for image in images:
             cmd = ["podman", "rmi", image, "-f"]
-            _log.debug(f"Command: {' '.join(cmd)}")
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            proc.communicate()
-            outcodes.append(proc.returncode)
-            _log.debug(f"Deleting podman images {image} finished with the code: {proc.returncode}")
+            returncode, _, _ = _run_command(cmd)
+            outcodes.append(returncode)
+            _log.debug(f"Deleting podman images {image} finished with the code: {returncode}")
 
         return outcodes
 

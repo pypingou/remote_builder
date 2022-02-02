@@ -220,16 +220,18 @@ def do_rpmbuild(config, host, conn, args):
         builder.root.write_srpm(srpm_filename, stream.read())
 
     _log.info(f"Installing build dependencies of:   {args.source_rpm}")
-    outs, errs, returncode = builder.root.install_build_dependencies(srpm_filename)
+    returncode, outs, errs = builder.root.install_build_dependencies(srpm_filename)
     if returncode == 0:
         _log.info("   Dependencies installed sucessfully")
     else:
         _log.info("   Failed to install dependencies")
         print(stderr)
         return returncode
+        print(outs)
+        print(errs)
 
     _log.info(f"Building the source rpm:            {args.source_rpm}")
-    outs, errs, returncode = builder.root.build_srpm(srpm_filename)
+    returncode, outs, errs = builder.root.build_srpm(srpm_filename)
     if returncode == 0:
         _log.info("   RPM built sucessfully")
     else:
@@ -238,7 +240,7 @@ def do_rpmbuild(config, host, conn, args):
     with open(f"{srpm_filename}.{host}.stdout", "w") as stream:
         stream.write(outs.decode("utf-8"))
     with open(f"{srpm_filename}.{host}.stderr", "w") as stream:
-        stream.write(errs.decode("utf-8"))
+        stream.write(errs)
     _log.info(f"   stdout log written in: {srpm_filename}.{host}.stdout")
     _log.info(f"   stderr log written in: {srpm_filename}.{host}.stderr")
 
@@ -270,7 +272,7 @@ def do_clean_images(config, host, conn, args):
     _log.debug("image:       %s", args.image)
     _log.debug("dry_run:     %s", args.dry_run)
 
-    images, stderr, returncode = conn.root.list_images()
+    returncode, outs, errs, images = conn.root.list_images()
     if returncode == 0:
         _log.info("   List of container retrieved sucessfully")
     else:
