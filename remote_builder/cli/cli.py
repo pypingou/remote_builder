@@ -253,9 +253,9 @@ def do_clean_images(config, host, conn, args):
 
     images, stderr, returncode = conn.root.list_images()
     if returncode == 0:
-        _log.info("  Container created sucessfully")
+        _log.info("  List of container retrieved sucessfully")
     else:
-        _log.info("  Failed to create container")
+        _log.info("  Failed to retrieve the list of containers")
         print(stderr)
         return returncode
 
