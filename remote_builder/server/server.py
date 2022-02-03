@@ -160,6 +160,67 @@ class RemoteBuilderService(rpyc.Service):
                     rpms.append(os.path.join(dirpath, filename))
         return rpms
 
+    def exposed_install_srpm(self, name):
+        """Install the specified source rpm so we can try rebuilding it."""
+        self._checks()
+        filename = secure_filename(name)
+
+        if not os.path.exists(os.path.join(self.tmpdirname.name, filename)):
+            _log.info(f"Could not find the srpm: {name} to build")
+            raise exceptions.BaseRemoteBuilderError(f"Could not file the file: {name}")
+
+        _log.info(
+            f"Installing build dependencies rpm {os.path.join(self.tmpdirname.name, filename)}"
+        )
+        cmd = [
+            "rpm",
+            "-iv",
+            "-D",
+            f"%_topdir {self.tmpdirname.name}",
+            os.path.join(self.tmpdirname.name, filename)
+        ]
+        returncode, outs, errs = _run_command(cmd, cwd=self.tmpdirname.name)
+
+        return [returncode, outs, errs]
+
+    @needs_rpmbuild
+    def exposed_build_srpm(self):
+        """Build the specified source rpm."""
+        self._checks()
+
+
+        def retrieve_spec_file(folder):
+            """Browse the provided folder and find the spec files available."""
+            specs = []
+            for (dirpath, dirnames, filenames) in os.walk(folder):
+                for filename in filenames:
+                    if filename.endswith(".spec"):
+                        specs.append(os.path.join(dirpath, filename))
+            return specs
+
+        specs = retrieve_spec_file(self.tmpdirname.name)
+        if len(specs) == 1:
+            spec = specs[0]
+        elif len(specs) == 0:
+            raise exceptions.BaseRemoteBuilderError(f"No spec file found in: {self.tmpdirname.name}")
+        else:
+            raise exceptions.BaseRemoteBuilderError(f"Several spec files found in: {self.tmpdirname.name}")
+
+        _log.info(f"Building rpm {os.path.join(self.tmpdirname.name, spec)}")
+        cmd = [
+            "rpmbuild",
+            "-bs",
+            os.path.join(self.tmpdirname.name, spec),
+            "-D",
+            f"%_topdir {self.tmpdirname.name}",
+            "-D",
+            "%_srcrpmdir %{_topdir}",
+        ]
+        returncode, outs, errs = _run_command(cmd, cwd=self.tmpdirname.name)
+        _log.debug("RPM built")
+
+        return [returncode, outs, errs]
+
     @needs_dnf_plugins
     def exposed_install_build_dependencies(self, name):
         """Install the build dependencies of the specified source rpm."""
@@ -179,8 +240,8 @@ class RemoteBuilderService(rpyc.Service):
         return [returncode, outs, errs]
 
     @needs_rpmbuild
-    def exposed_build_srpm(self, name):
-        """Build the specified source rpm."""
+    def exposed_build_rpm(self, name):
+        """Build the RPM from the specified source RPM."""
         self._checks()
         filename = secure_filename(name)
 
