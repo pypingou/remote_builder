@@ -1,6 +1,6 @@
+import os
 import re
 import unicodedata
-import os
 
 """
 This code has been copied over from the werkzeug project.
