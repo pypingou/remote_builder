@@ -83,7 +83,8 @@ def parse_arguments(args=None):
     )
 
     parser.add_argument(
-        "-p", "--port",
+        "-p",
+        "--port",
         default=18861,
         help="Port to the run the server at (detaulf to 18861)",
     )
@@ -102,18 +103,22 @@ def _validate_config(config):
     """Validate the configuration file."""
 
     if not config.has_section("hosts"):
-        raise BaseRemoteBuilderError("Configuration file has no 'hosts' section")
+        raise configparser.NoSectionErro("Configuration file has no 'hosts' section")
 
     for _, host in config.items("hosts"):
-        if not "type" in config.options(host):
-            raise BaseRemoteBuilderError(f"Host {host} has not 'type' option")
+        if "type" not in config.options(host):
+            raise configparser.NoOptionError(f"Host {host} has not 'type' option")
         if config.get(host, "type") not in ["ssh", "socket"]:
-            raise BaseRemoteBuilderError(f"Host {host}'s type option is invalid, not either: ssh, socket")
+            raise configparser.NoOptionError(
+                f"Host {host}'s type option is invalid, not either: ssh, socket"
+            )
         if not config.get(host, "port"):
-            raise BaseRemoteBuilderError(f"Host {host} has no port specified")
+            raise configparser.NoOptionError(f"Host {host} has no port specified")
         if config.get(host, "type") == "ssh":
             if not config.get(host, "user") and not config.get(host, "keyfile"):
-                raise BaseRemoteBuilderError(f"Host {host} has no user or keyfile specified")
+                raise configparser.NoOptionError(
+                    f"Host {host} has no user or keyfile specified"
+                )
 
 
 def get_config(configfile=None):
@@ -137,8 +142,10 @@ def _connect(config, host, port=None):
     """
     port = port or config.get(host, "port")
     connection_type = config.get(host, "type")
-    timeout = config.getint(host, "timeout", fallback=(60 * 60 * 3)) # 3h timeout
-    _log.info(f"Connecting to {host}:{port} using {connection_type} with timeout: {timeout}")
+    timeout = config.getint(host, "timeout", fallback=(60 * 60 * 3))  # 3h timeout
+    _log.info(
+        f"Connecting to {host}:{port} using {connection_type} with timeout: {timeout}"
+    )
 
     if connection_type == "socket":
         conn = rpyc.connect(
@@ -150,12 +157,16 @@ def _connect(config, host, port=None):
             keepalive=True,
         )
     else:
-        user=config.get(host, "user", fallback=None)
-        keyfile=config.get(host, "keyfile", fallback=None)
-        password=config.get(host, "password", fallback=None)
-        ssh_port=config.getint(host, "ssh_port", fallback=22)
-        _log.debug(f"Connecting via ssh as {user} using the keyfile {keyfile} and or password: {'***' if password else password}")
+        user = config.get(host, "user", fallback=None)
+        keyfile = config.get(host, "keyfile", fallback=None)
+        password = config.get(host, "password", fallback=None)
+        ssh_port = config.getint(host, "ssh_port", fallback=22)
+        _log.debug(
+            f"Connecting via ssh as {user} using the keyfile {keyfile} and "
+            f"or password: {'***' if password else password}"
+        )
         from plumbum import SshMachine
+
         rem = SshMachine(
             host,
             user=user,
@@ -202,12 +213,14 @@ def do_rpmbuild(config, host, conn, args):
         return returncode
 
     _log.info("Starting the builder container")
-    returncode, container_id, stderr, new_port = conn.root.start_builder(image_id, args.port)
+    returncode, container_id, stderr, new_port = conn.root.start_builder(
+        image_id, args.port
+    )
     if returncode == 0:
         _log.info("   Container started sucessfully")
     else:
         _log.info("  Failed to start container")
-        print(stderr )
+        print(stderr)
         return returncode
 
     builder = _connect(config, host, new_port)
@@ -296,7 +309,7 @@ def do_clean_images(config, host, conn, args):
         _log.info("   List of container retrieved sucessfully")
     else:
         _log.info("   Failed to retrieve the list of containers")
-        print(stderr)
+        print(errs)
         return returncode
 
     if not images:
@@ -342,7 +355,7 @@ def main():
 
     try:
         config = get_config(args.config)
-    except BaseRemoteBuilderError as error:
+    except configparser.Error as error:
         print(f"ERROR: {error}")
         return 5
 

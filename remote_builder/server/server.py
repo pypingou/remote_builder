@@ -1,7 +1,6 @@
 import argparse
 import logging
 import json
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -50,7 +49,7 @@ def secure_filename(name):
 
 
 def _run_command(cmd, cwd=None):
-    """Run the specified command and return its stdout, stderr and returncode. """
+    """Run the specified command and return its stdout, stderr and returncode."""
     _log.debug(f"   Command: {' '.join(cmd)}")
     proc = subprocess.Popen(
         cmd,
@@ -84,14 +83,12 @@ class RemoteBuilderService(rpyc.Service):
         """Performs a few checks before continuing."""
         if not self.tmpdirname:
             _log.info("No workding directory set")
-            raise exceptions.BaseRemoteBuilderError(f"No working directory set")
+            raise exceptions.BaseRemoteBuilderError("No working directory set")
 
     def exposed_create_builder(self):
         """Create a podman container which will be to build the package."""
         containerfile = os.path.join(self.tmpdirname.name, "Containerfile_builder")
-        _log.info(
-            f"Writing down the Dockerfile for builders at {containerfile}"
-        )
+        _log.info(f"Writing down the Dockerfile for builders at {containerfile}")
         with open(containerfile, "wb") as out_file:
             out_file.write(containers.BUILDER_CONTAINER.encode("utf-8"))
 
@@ -177,7 +174,7 @@ class RemoteBuilderService(rpyc.Service):
             "-iv",
             "-D",
             f"%_topdir {self.tmpdirname.name}",
-            os.path.join(self.tmpdirname.name, filename)
+            os.path.join(self.tmpdirname.name, filename),
         ]
         returncode, outs, errs = _run_command(cmd, cwd=self.tmpdirname.name)
 
@@ -187,7 +184,6 @@ class RemoteBuilderService(rpyc.Service):
     def exposed_build_srpm(self):
         """Build the specified source rpm."""
         self._checks()
-
 
         def retrieve_spec_file(folder):
             """Browse the provided folder and find the spec files available."""
@@ -202,9 +198,13 @@ class RemoteBuilderService(rpyc.Service):
         if len(specs) == 1:
             spec = specs[0]
         elif len(specs) == 0:
-            raise exceptions.BaseRemoteBuilderError(f"No spec file found in: {self.tmpdirname.name}")
+            raise exceptions.BaseRemoteBuilderError(
+                f"No spec file found in: {self.tmpdirname.name}"
+            )
         else:
-            raise exceptions.BaseRemoteBuilderError(f"Several spec files found in: {self.tmpdirname.name}")
+            raise exceptions.BaseRemoteBuilderError(
+                f"Several spec files found in: {self.tmpdirname.name}"
+            )
 
         _log.info(f"Building rpm {os.path.join(self.tmpdirname.name, spec)}")
         cmd = [
@@ -326,7 +326,9 @@ class RemoteBuilderService(rpyc.Service):
             cmd = ["podman", "rmi", image, "-f"]
             returncode, _, _ = _run_command(cmd)
             outcodes.append(returncode)
-            _log.debug(f"Deleting podman images {image} finished with the code: {returncode}")
+            _log.debug(
+                f"Deleting podman images {image} finished with the code: {returncode}"
+            )
 
         return outcodes
 
@@ -343,7 +345,8 @@ def parse_arguments(args=None):
     )
 
     parser.add_argument(
-        "-p", "--port",
+        "-p",
+        "--port",
         default=18861,
         help="Port to the run the server at (detaulf to 18861)",
     )

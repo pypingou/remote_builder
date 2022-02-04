@@ -1,4 +1,3 @@
-
 BUILDER_CONTAINER = """
 FROM centos:stream9-development
 
