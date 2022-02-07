@@ -28,8 +28,10 @@ setup(
     package_data={},
     zip_safe=False,
     install_requires=["rpyc"],
-    entry_points={"console_scripts": [
-        "remote_builder_server = remote_builder.server.server:main",
-        "remote_builder = remote_builder.cli.cli:main",
-    ]},
+    entry_points={
+        "console_scripts": [
+            "remote_builder_server = remote_builder.server.server:main",
+            "remote_builder = remote_builder.cli.cli:main",
+        ]
+    },
 )
