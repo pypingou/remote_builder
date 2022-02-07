@@ -166,6 +166,8 @@ def _connect(config, host, port=None):
             f"or password: {'***' if password else password}"
         )
         from plumbum import SshMachine
+        # FYI here are is the doc about this object:
+        # https://plumbum.readthedocs.io/en/latest/api/machines.html#plumbum.machines.ssh_machine.SshMachine
 
         rem = SshMachine(
             host,
