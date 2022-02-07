@@ -178,6 +178,11 @@ class RemoteBuilderService(rpyc.Service):
         ]
         returncode, outs, errs = _run_command(cmd, cwd=self.tmpdirname.name)
 
+        _log.info(
+            f"Removing the original source rpm {os.path.join(self.tmpdirname.name, filename)}"
+        )
+        os.unlink(os.path.join(self.tmpdirname.name, filename))
+
         return [returncode, outs, errs]
 
     @needs_rpmbuild
@@ -185,16 +190,16 @@ class RemoteBuilderService(rpyc.Service):
         """Build the specified source rpm."""
         self._checks()
 
-        def retrieve_spec_file(folder):
+        def retrieve_file(folder, end):
             """Browse the provided folder and find the spec files available."""
             specs = []
             for (dirpath, dirnames, filenames) in os.walk(folder):
                 for filename in filenames:
-                    if filename.endswith(".spec"):
+                    if filename.endswith(end):
                         specs.append(os.path.join(dirpath, filename))
             return specs
 
-        specs = retrieve_spec_file(self.tmpdirname.name)
+        specs = retrieve_file(self.tmpdirname.name, ".spec")
         if len(specs) == 1:
             spec = specs[0]
         elif len(specs) == 0:
@@ -219,7 +224,20 @@ class RemoteBuilderService(rpyc.Service):
         returncode, outs, errs = _run_command(cmd, cwd=self.tmpdirname.name)
         _log.debug("RPM built")
 
-        return [returncode, outs, errs]
+        srpms = retrieve_file(self.tmpdirname.name, ".src.rpm")
+        srpm = None
+        if len(srpms) == 1:
+            srpm = srpms[0]
+        elif len(srpms) == 0:
+            raise exceptions.BaseRemoteBuilderError(
+                f"No source rpm file found in: {self.tmpdirname.name}"
+            )
+        else:
+            raise exceptions.BaseRemoteBuilderError(
+                f"Several source rpm files found in: {self.tmpdirname.name}"
+            )
+
+        return [returncode, outs, errs, srpm]
 
     @needs_dnf_plugins
     def exposed_install_build_dependencies(self, name):

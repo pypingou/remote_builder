@@ -246,7 +246,7 @@ def do_rpmbuild(config, host, conn, args):
         return returncode
 
     _log.info(f"Rebuilding the source rpm:           {args.source_rpm}")
-    returncode, outs, errs = builder.root.build_srpm()
+    returncode, outs, errs, source_rpm = builder.root.build_srpm()
     if returncode == 0:
         _log.info("   Rebuilt SRPM sucessfully")
     else:
@@ -255,8 +255,8 @@ def do_rpmbuild(config, host, conn, args):
         print(errs)
         return returncode
 
-    _log.info(f"Installing build dependencies of:   {args.source_rpm}")
-    returncode, outs, errs = builder.root.install_build_dependencies(srpm_filename)
+    _log.info(f"Installing build dependencies of:    {source_rpm}")
+    returncode, outs, errs = builder.root.install_build_dependencies(source_rpm)
     if returncode == 0:
         _log.info("   Dependencies installed sucessfully")
     else:
@@ -265,8 +265,8 @@ def do_rpmbuild(config, host, conn, args):
         print(errs)
         return returncode
 
-    _log.info(f"Building the RPM from:            {args.source_rpm}")
-    returncode, outs, errs = builder.root.build_rpm(srpm_filename)
+    _log.info(f"Building the RPM from:             {source_rpm}")
+    returncode, outs, errs = builder.root.build_rpm(source_rpm)
     if returncode == 0:
         _log.info("   RPM built sucessfully")
     else:
