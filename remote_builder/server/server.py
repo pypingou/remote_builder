@@ -167,7 +167,7 @@ class RemoteBuilderService(rpyc.Service):
             raise exceptions.BaseRemoteBuilderError(f"Could not file the file: {name}")
 
         _log.info(
-            f"Installing build dependencies rpm {os.path.join(self.tmpdirname.name, filename)}"
+            f"Installing source rpm {os.path.join(self.tmpdirname.name, filename)}"
         )
         cmd = [
             "rpm",

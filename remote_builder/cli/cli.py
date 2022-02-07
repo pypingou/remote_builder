@@ -231,7 +231,7 @@ def do_rpmbuild(config, host, conn, args):
 
     srpm_filename = os.path.basename(args.source_rpm)
 
-    _log.info(f"Uploading the source rpm:           {args.source_rpm}")
+    _log.info(f"Uploading the source rpm:            {args.source_rpm}")
     with open(args.source_rpm, "rb") as stream:
         builder.root.write_srpm(srpm_filename, stream.read())
 
@@ -280,7 +280,7 @@ def do_rpmbuild(config, host, conn, args):
     _log.info(f"   stderr log written in: {srpm_filename}.{host}.stderr")
 
     rpms = builder.root.exposed_retrieve_rpm_lists()
-    _log.info(f"RPMs built: {' '.join(rpms)}")
+    _log.debug(f"RPMs built: {' '.join(rpms)}")
 
     for rpm in rpms:
         _log.info(f"Retrieving file {rpm}")
