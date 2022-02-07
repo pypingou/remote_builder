@@ -13,6 +13,12 @@ You can very simply install remote builder from pip using:
 pip install remote_builder
 ```
 
+You can also install the latest (potentially in development) version of the code
+using:
+```
+pip install rpyc git+https://github.com/pypingou/remote_builder.git
+```
+
 ### From git
 
 This allows to run the latest (potentially in development version of the code)
