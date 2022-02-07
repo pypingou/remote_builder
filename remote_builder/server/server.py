@@ -227,7 +227,7 @@ class RemoteBuilderService(rpyc.Service):
         srpms = retrieve_file(self.tmpdirname.name, ".src.rpm")
         srpm = None
         if len(srpms) == 1:
-            srpm = srpms[0]
+            srpm = os.path.basename(srpms[0])
         elif len(srpms) == 0:
             raise exceptions.BaseRemoteBuilderError(
                 f"No source rpm file found in: {self.tmpdirname.name}"
