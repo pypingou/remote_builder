@@ -1,0 +1,31 @@
+site_name: Remote Builder
+
+repo_url: https://github.com/pypingou/remote_builder
+repo_name: remote_builder
+
+copyright: © Red Hat
+nav:
+  - Home: index.md
+  - Installing/Running: install.md
+  - Configuration file: config.md
+
+theme:
+  name: readthedocs
+  nav_style: dark
+  navigation_depth: 4
+  custom_dir: docs/custom_theme/
+  favicon: custom_theme/img/favicon.ico
+  features:
+    - navigation.expand
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - toc.integrate
+
+markdown_extensions:
+  - toc:
+      permalink: True
+  - sane_lists
+  - smarty
+  - admonition
+

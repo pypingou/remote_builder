@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{%- block site_name %}
+<a class="navbar-brand" href="{{ nav.homepage.url|url }}">
+    {% if config.logo %}
+    <img src="{{ config.logo | url }}" alt="logo" />
+    {% endif %}
+    {{ config.site_name }}
+</a>
+{%- endblock %}
+
+
+{%- block footer %}
+<hr>
+{%- if config.copyright %}
+  <p>{{ config.copyright }}</p>
+{%- endif %}
+
+{%- endblock %}
