@@ -265,7 +265,7 @@ def do_rpmbuild(config, host, conn, args):
         print(errs)
         return returncode
 
-    _log.info(f"Building the RPM from:             {source_rpm}")
+    _log.info(f"Building the RPM from:               {source_rpm}")
     returncode, outs, errs = builder.root.build_rpm(source_rpm)
     if returncode == 0:
         _log.info("   RPM built sucessfully")
