@@ -1,6 +1,8 @@
 import argparse
 import configparser
+import itertools
 import logging
+from multiprocessing import Pool
 import os
 import sys
 
@@ -69,6 +71,13 @@ def parse_arguments(args=None):
         default=False,
         action="store_true",
         help="Increase the verbosity of the information displayed",
+    )
+
+    parser.add_argument(
+        "--sequential",
+        default=False,
+        action="store_true",
+        help="Process the different hosts sequentially instead of in parallel",
     )
 
     parser.add_argument(
@@ -342,6 +351,29 @@ def do_clean_images(config, host, conn, args):
             _log.info("Successfully cleaned all the container images on the server.")
 
 
+def process_host(arg_list):
+    """Process the host based on the arguments provided to the CLI."""
+    config, host, args = arg_list
+    return_code = 0
+    conn = _connect(config, host)
+    # Act based on the arguments given
+    try:
+        args.func(config, host, conn, args)
+    except KeyboardInterrupt:
+        print("\nInterrupted by user.")
+        return_code = 1
+    except exceptions.BaseRemoteBuilderError as err:
+        print(err)
+        return_code = 3
+    except Exception as err:
+        print("Error: {0}".format(err))
+        logging.exception("Generic error catched:")
+        return_code = 2
+
+    # if return_code != 0:
+    return return_code
+
+
 def main():
     """Start of the application."""
 
@@ -362,26 +394,18 @@ def main():
         print(f"ERROR: {error}")
         return 5
 
-    return_code = 0
-    for _, host in config.items("hosts"):
-        conn = _connect(config, host)
-
-        # Act based on the arguments given
-        try:
-            args.func(config, host, conn, args)
-        except KeyboardInterrupt:
-            print("\nInterrupted by user.")
-            return_code = 1
-        except exceptions.BaseRemoteBuilderError as err:
-            print(err)
-            return_code = 3
-        except Exception as err:
-            print("Error: {0}".format(err))
-            logging.exception("Generic error catched:")
-            return_code = 2
-
-        if return_code != 0:
-            return return_code
+    if args.sequential:
+        return_code = 0
+        for _, host in config.items("hosts"):
+            rtn_code = process_host([config, host, args])
+            if rtn_code != 0:
+                # Any return code that indicates a failure is good enough
+                return_code = rtn_code
+    else:
+        p = Pool(5)
+        hosts = [it[1] for it in config.items("hosts")]
+        return_code = p.map(process_host, itertools.product([config], hosts, [args]))
+        return_code = 1 if any(return_code) else 0
 
     return return_code
 
