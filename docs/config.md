@@ -6,6 +6,16 @@ to which host the CLI should connect to.
 
 Here is an example configuration file:
 ```
+containerimage = quay.io/pchibon/remote_builder
+
+containerfile = FROM quay.io/centos/centos:stream9-development
+
+    RUN dnf install -y 'dnf-command(builddep)' rpm-build pip git && \
+        dnf config-manager --set-enabled crb
+    RUN pip install rpyc git+https://github.com/pypingou/remote_builder.git
+
+    CMD ["remote_builder_server", "--debug"]
+
 [hosts]
 host1 = localhost
 host2 = 192.168.1.64
