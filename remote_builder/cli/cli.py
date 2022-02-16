@@ -148,11 +148,13 @@ def get_config(configfile=None):
     """Returns the ConfigParser object with the loaded configuration."""
     _log.debug("Loading the default configuration")
     config = configparser.ConfigParser()
-    config.read_string(_default_config)
 
     if configfile:
-        _log.debug(f"Updating the configuration file from {configfile}")
+        _log.debug(f"Loading the configuration file from {configfile}")
         config.read(configfile)
+    else:
+        _log.debug("Loading the default configuration")
+        config.read_string(_default_config)
 
     _validate_config(config)
     return config
