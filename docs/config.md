@@ -82,11 +82,28 @@ There are a few options available for this connection type:
 
 **Either a `user` or a `keyfile` must be specified for host of type `ssh`.**
 
+## The container section
+
+This section is used to configure the container builder to use as buildroot for
+the RPM build environment.
+
+It can have two options: `containerimage` and `containerfile`. If both are
+specified, the `containerfile` will be used.
+
+* `containerimage` this can be used to specify which image to pull from a container
+  registry. It defaults to `quay.io/pchibon/remote_builder`.
+* `containerfile` this can be used to pass the content of a full containerfile
+  (or Dockerfile), using this option, one can use or build a fully customized
+  build environment.
+
 
 ## Default configuration file
 
 Here is the default configuration file of remote builder:
 ```
+[container]
+containerimage = quay.io/pchibon/remote_builder
+
 [hosts]
 host1 = localhost
 

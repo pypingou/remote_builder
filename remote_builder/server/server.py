@@ -9,7 +9,6 @@ import tempfile
 import rpyc
 from rpyc.utils.server import ThreadedServer
 
-from remote_builder.server import containers
 from remote_builder.server import exceptions
 import remote_builder.server.utils
 
@@ -85,16 +84,23 @@ class RemoteBuilderService(rpyc.Service):
             _log.info("No workding directory set")
             raise exceptions.BaseRemoteBuilderError("No working directory set")
 
-    def exposed_create_builder(self):
+    def exposed_create_builder(self, containerfile=None, containerimage=None):
         """Create a podman container which will be to build the package."""
-        containerfile = os.path.join(self.tmpdirname.name, "Containerfile_builder")
-        _log.info(f"Writing down the Dockerfile for builders at {containerfile}")
-        with open(containerfile, "wb") as out_file:
-            out_file.write(containers.BUILDER_CONTAINER.encode("utf-8"))
+        # Use the specified containerfile
+        if containerfile:
+            containerfilename = os.path.join(self.tmpdirname.name, "Containerfile_builder")
+            _log.info(f"Writing down the Dockerfile for builders at {containerfilename}")
+            with open(containerfilename, "wb") as out_file:
+                out_file.write(containerfile.encode("utf-8"))
 
-        _log.info("Building builder container")
-        cmd = ["podman", "build", "-f", containerfile, "--rm", "-t", "rs_builder"]
-        returncode, outs, errs = _run_command(cmd)
+            _log.info("Building builder container")
+            cmd = ["podman", "build", "-f", containerfilename, "--rm", "-t", "rs_builder"]
+            returncode, outs, errs = _run_command(cmd)
+        elif containerimage:
+            # Use the specified container image
+            _log.info(f"Pulling the builder container: {containerimage}")
+            cmd = ["podman", "pull", containerimage]
+            returncode, outs, errs = _run_command(cmd)
 
         image_id = outs.split("\n")[-1]
         _log.info(f"Container image built: {image_id}")

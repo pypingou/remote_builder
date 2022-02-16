@@ -15,6 +15,8 @@ _log = logging.getLogger(__name__)
 
 
 _default_config = """
+[container]
+containerimage = quay.io/pchibon/remote_builder
 [hosts]
 host1 = localhost
 [localhost]
@@ -113,6 +115,18 @@ def _validate_config(config):
 
     if not config.has_section("hosts"):
         raise configparser.NoSectionErro("Configuration file has no 'hosts' section")
+
+    if config.has_section("container"):
+        options = config.options("container")
+        if "containerimage" in options and "containerfile" in options:
+            _log.warning(
+                "Both containerimage and containerfile present in the configuration "
+                "file, containerfile will be used."
+            )
+        elif "containerimage" not in options and "containerfile" not in options:
+            raise configparser.NoOptionError(
+                f"Neither containerfile nor containerimage specified in the config"
+            )
 
     for _, host in config.items("hosts"):
         if "type" not in config.options(host):
@@ -217,7 +231,10 @@ def do_rpmbuild(config, host, conn, args):
     conn.root.create_workdir()
 
     _log.info("Creating the builder container")
-    returncode, image_id, stderr = conn.root.create_builder()
+    returncode, image_id, stderr = conn.root.create_builder(
+        containerfile=config.get("container", "containerfile", fallback=None),
+        containerimage=config.get("container", "containerimage", fallback=None),
+    )
     if returncode == 0:
         _log.info("   Container created sucessfully")
     else:
