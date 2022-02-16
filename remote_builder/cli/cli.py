@@ -125,7 +125,7 @@ def _validate_config(config):
             )
         elif "containerimage" not in options and "containerfile" not in options:
             raise configparser.NoOptionError(
-                f"Neither containerfile nor containerimage specified in the config"
+                "Neither containerfile nor containerimage specified in the config"
             )
 
     for _, host in config.items("hosts"):
@@ -225,32 +225,32 @@ def do_rpmbuild(config, host, conn, args):
     :arg args: the argparse object returned by ``parse_arguments()``.
 
     """
-    _log.debug("source_rpm:     %s", args.source_rpm)
+    _log.debug(f"{host.ljust(20)} source_rpm:     %s", args.source_rpm)
 
     if not os.path.exists(args.source_rpm):
         raise OSError("File not found: %s", args.source_rpm)
 
     conn.root.create_workdir()
 
-    _log.info("Creating the builder container")
+    _log.info(f"{host.ljust(20)} Creating the builder container")
     returncode, image_id, stderr = conn.root.create_builder(
         containerfile=config.get("container", "containerfile", fallback=None),
         containerimage=config.get("container", "containerimage", fallback=None),
     )
     if returncode == 0:
-        _log.info("   Container created sucessfully")
+        _log.info(f"{host.ljust(20)}    Container created sucessfully")
     else:
-        _log.info("   Failed to create container")
+        _log.info(f"{host.ljust(20)}    Failed to create container")
         return returncode
 
-    _log.info("Starting the builder container")
+    _log.info(f"{host.ljust(20)} Starting the builder container")
     returncode, container_id, stderr, new_port = conn.root.start_builder(
         image_id, args.port
     )
     if returncode == 0:
-        _log.info("   Container started sucessfully")
+        _log.info(f"{host.ljust(20)}    Container started sucessfully")
     else:
-        _log.info("  Failed to start container")
+        _log.info(f"{host.ljust(20)}   Failed to start container")
         print(stderr)
         return returncode
 
@@ -259,68 +259,78 @@ def do_rpmbuild(config, host, conn, args):
 
     srpm_filename = os.path.basename(args.source_rpm)
 
-    _log.info(f"Uploading the source rpm:            {args.source_rpm}")
+    _log.info(
+        f"{host.ljust(20)} Uploading the source rpm:            {args.source_rpm}"
+    )
     with open(args.source_rpm, "rb") as stream:
         builder.root.write_srpm(srpm_filename, stream.read())
 
-    _log.info(f"Installing the source rpm:           {args.source_rpm}")
+    _log.info(
+        f"{host.ljust(20)} Installing the source rpm:           {args.source_rpm}"
+    )
     returncode, outs, errs = builder.root.install_srpm(srpm_filename)
     if returncode == 0:
-        _log.info("   Installed SRPM sucessfully")
+        _log.info(f"{host.ljust(20)}    Installed SRPM sucessfully")
     else:
-        _log.info("   Failed to install the SRPM")
+        _log.info(f"{host.ljust(20)}    Failed to install the SRPM")
         print(outs)
         print(errs)
         return returncode
 
-    _log.info(f"Rebuilding the source rpm:           {args.source_rpm}")
+    _log.info(
+        f"{host.ljust(20)} Rebuilding the source rpm:           {args.source_rpm}"
+    )
     returncode, outs, errs, source_rpm = builder.root.build_srpm()
     if returncode == 0:
-        _log.info("   Rebuilt SRPM sucessfully")
+        _log.info(f"{host.ljust(20)}    Rebuilt SRPM sucessfully")
     else:
-        _log.info("   Failed to rebuild the SRPM")
+        _log.info(f"{host.ljust(20)}    Failed to rebuild the SRPM")
         print(outs)
         print(errs)
         return returncode
 
-    _log.info(f"Installing build dependencies of:    {source_rpm}")
+    _log.info(f"{host.ljust(20)} Installing build dependencies of:    {source_rpm}")
     returncode, outs, errs = builder.root.install_build_dependencies(source_rpm)
     if returncode == 0:
-        _log.info("   Dependencies installed sucessfully")
+        _log.info(f"{host.ljust(20)}    Dependencies installed sucessfully")
     else:
-        _log.info("   Failed to install dependencies")
+        _log.info(f"{host.ljust(20)}    Failed to install dependencies")
         print(outs)
         print(errs)
         return returncode
 
-    _log.info(f"Building the RPM from:               {source_rpm}")
+    _log.info(f"{host.ljust(20)} Building the RPM from:               {source_rpm}")
     returncode, outs, errs = builder.root.build_rpm(source_rpm)
     if returncode == 0:
-        _log.info("   RPM built sucessfully")
+        _log.info(f"{host.ljust(20)}    RPM built sucessfully")
     else:
-        _log.info("   Failed to build the RPMs")
-    _log.debug(f"Return code: {returncode}")
+        _log.info(f"{host.ljust(20)}    Failed to build the RPMs")
+    _log.debug(f"{host.ljust(20)} Return code: {returncode}")
     with open(f"{srpm_filename}.{host}.stdout", "w") as stream:
         stream.write(outs)
     with open(f"{srpm_filename}.{host}.stderr", "w") as stream:
         stream.write(errs)
-    _log.info(f"   stdout log written in: {srpm_filename}.{host}.stdout")
-    _log.info(f"   stderr log written in: {srpm_filename}.{host}.stderr")
+    _log.info(
+        f"{host.ljust(20)}    stdout log written in: {srpm_filename}.{host}.stdout"
+    )
+    _log.info(
+        f"{host.ljust(20)}    stderr log written in: {srpm_filename}.{host}.stderr"
+    )
 
     rpms = builder.root.exposed_retrieve_rpm_lists()
-    _log.debug(f"RPMs built: {' '.join(rpms)}")
+    _log.debug(f"{host.ljust(20)} RPMs built: {' '.join(rpms)}")
 
     for rpm in rpms:
-        _log.info(f"Retrieving file {rpm}")
+        _log.info(f"{host.ljust(20)} Retrieving file {rpm}")
         with open(os.path.basename(rpm), "wb") as stream:
             stream.write(builder.root.exposed_retrieve_file(rpm))
 
-    _log.info("Stopping the builder container")
+    _log.info(f"{host.ljust(20)} Stopping the builder container")
     returncode, outs, errs = conn.root.stop_builder(container_id)
     if returncode == 0:
-        _log.info("   Container stopped sucessfully")
+        _log.info(f"{host.ljust(20)}    Container stopped sucessfully")
     else:
-        _log.info("   Failed to stop container")
+        _log.info(f"{host.ljust(20)}    Failed to stop container")
         print(errs)
         return returncode
 
@@ -332,42 +342,50 @@ def do_clean_images(config, host, conn, args):
     :arg args: the argparse object returned by ``parse_arguments()``.
 
     """
-    _log.debug("image:       %s", args.image)
-    _log.debug("dry_run:     %s", args.dry_run)
+    _log.debug(f"{host.ljust(20)} image:       %s", args.image)
+    _log.debug(f"{host.ljust(20)} dry_run:     %s", args.dry_run)
 
     returncode, outs, errs, images = conn.root.list_images()
     if returncode == 0:
-        _log.info("   List of container retrieved sucessfully")
+        _log.info(f"{host.ljust(20)}    List of container retrieved sucessfully")
     else:
-        _log.info("   Failed to retrieve the list of containers")
+        _log.info(f"{host.ljust(20)}    Failed to retrieve the list of containers")
         print(errs)
         return returncode
 
     if not images:
-        _log.info(f"No relevant images retrieved on the host {host}")
+        _log.info(f"{host.ljust(20)} No relevant images retrieved on the host {host}")
         return 0
 
     if args.dry_run:
         if args.image:
             if args.image in images:
-                _log.info(f"Would delete image {args.image}")
+                _log.info(f"{host.ljust(20)} Would delete image {args.image}")
             else:
-                _log.info(f"Container {args.image} not found on the server.")
+                _log.info(
+                    f"{host.ljust(20)} Container {args.image} not found on the server."
+                )
         else:
-            _log.info(f"Would delete image(s): {' '.join(images)}")
+            _log.info(f"{host.ljust(20)} Would delete image(s): {' '.join(images)}")
     else:
         if args.image:
             if args.image in images:
                 outcodes = conn.root.clean_images([args.image])
             else:
-                _log.info(f"Container {args.image} not found on the server.")
+                _log.info(
+                    f"{host.ljust(20)} Container {args.image} not found on the server."
+                )
         else:
             outcodes = conn.root.clean_images(images)
 
         if set(outcodes) != set([0]):
-            _log.info("Failed to clean all the container images on the server.")
+            _log.info(
+                f"{host.ljust(20)} Failed to clean all the container images on the server."
+            )
         else:
-            _log.info("Successfully cleaned all the container images on the server.")
+            _log.info(
+                f"{host.ljust(20)} Successfully cleaned all the container images on the server."
+            )
 
 
 def process_host(arg_list):
