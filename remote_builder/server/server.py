@@ -88,13 +88,25 @@ class RemoteBuilderService(rpyc.Service):
         """Create a podman container which will be to build the package."""
         # Use the specified containerfile
         if containerfile:
-            containerfilename = os.path.join(self.tmpdirname.name, "Containerfile_builder")
-            _log.info(f"Writing down the Dockerfile for builders at {containerfilename}")
+            containerfilename = os.path.join(
+                self.tmpdirname.name, "Containerfile_builder"
+            )
+            _log.info(
+                f"Writing down the Dockerfile for builders at {containerfilename}"
+            )
             with open(containerfilename, "wb") as out_file:
                 out_file.write(containerfile.encode("utf-8"))
 
             _log.info("Building builder container")
-            cmd = ["podman", "build", "-f", containerfilename, "--rm", "-t", "rs_builder"]
+            cmd = [
+                "podman",
+                "build",
+                "-f",
+                containerfilename,
+                "--rm",
+                "-t",
+                "rs_builder",
+            ]
             returncode, outs, errs = _run_command(cmd)
         elif containerimage:
             # Use the specified container image
