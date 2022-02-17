@@ -5,6 +5,7 @@ import logging
 from multiprocessing import Pool
 import os
 import sys
+import time
 
 import rpyc
 
@@ -253,6 +254,8 @@ def do_rpmbuild(config, host, conn, args):
         _log.info(f"{host.ljust(20)}   Failed to start container")
         print(stderr)
         return returncode
+
+    time.sleep(2)
 
     builder = _connect(config, host, new_port)
     builder.root.create_workdir()
