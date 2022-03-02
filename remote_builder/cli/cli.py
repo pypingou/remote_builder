@@ -4,6 +4,7 @@ import itertools
 import logging
 from multiprocessing import Pool
 import os
+import subprocess
 import sys
 import time
 
@@ -174,6 +175,15 @@ def _connect(config, host, port=None):
     )
 
     if connection_type == "socket":
+        proc = subprocess.Popen([
+                "python3",
+                "server/server.py",
+                "--debug"
+                ],
+                cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
+                env={"PYTHONPATH": os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))}
+        )
+        time.sleep(1)
         conn = rpyc.connect(
             host=host,
             port=port,
