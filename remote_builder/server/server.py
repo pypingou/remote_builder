@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 
 import rpyc
 from rpyc.utils.server import ThreadedServer
@@ -58,6 +59,10 @@ def _run_command(cmd, cwd=None):
     )
     outs, errs = proc.communicate()
     _log.debug(f"   Command finished with the code: {proc.returncode}")
+    if proc.returncode:
+        _log.debug(f"stdout:\n{outs.decode('utf-8').strip()}")
+        _log.debug(f"stderr:\n{errs.decode('utf-8').strip()}")
+
     return [
         proc.returncode,
         outs.decode("utf-8").strip(),
@@ -67,6 +72,7 @@ def _run_command(cmd, cwd=None):
 
 class RemoteBuilderService(rpyc.Service):
     tempdirname = None
+    proc = None
 
     def on_connect(self, conn):
         # code that runs when a connection is created
@@ -83,6 +89,32 @@ class RemoteBuilderService(rpyc.Service):
         if not self.tmpdirname:
             _log.info("No workding directory set")
             raise exceptions.BaseRemoteBuilderError("No working directory set")
+
+    def exposed_install_remote_builder(self):
+        """Clone locally the remote_builder project."""
+        git_repo = "https://github.com/pypingou/remote_builder.git"
+        if not os.path.exists("remote_builder"):
+            _log.info(f"Cloning: {git_repo}")
+            cmd = ["git", "clone", git_repo, "-b", "client_server"]
+            returncode, outs, errs = _run_command(cmd)
+        else:
+            _log.info(f"Updating: {git_repo}")
+            cmd = ["git", "pull", "--rebase"]
+            returncode, outs, errs = _run_command(cmd, cwd="remote_builder")
+
+        return [returncode, image_id, errs]
+
+    def exposed_start_server(self):
+        self.proc = subprocess.Popen([
+                "python3",
+                "remote_builder/server/server.py",
+                "--debug"
+                ],
+                env=os.environ.update({"PYTHONPATH": "."})
+        )
+        time.sleep(1)
+
+        return True
 
     def exposed_create_builder(self, containerfile=None, containerimage=None):
         """Create a podman container which will be to build the package."""

@@ -39,7 +39,7 @@ def _parser_rpmbuild(subparser):
         "rpmbuild", help="Build the specified source RPM (*.src.rpm) remotely"
     )
     local_parser.add_argument("source_rpm", help="Path to the source RPM to build")
-    local_parser.set_defaults(func=do_rpmbuild)
+    local_parser.set_defaults(func="do_rpmbuild")
 
 
 def _parser_clean_images(subparser):
@@ -63,7 +63,7 @@ def _parser_clean_images(subparser):
         action="store_true",
         help="Lists the containers and images who would be deleted, don't actually delete them",
     )
-    local_parser.set_defaults(func=do_clean_images)
+    local_parser.set_defaults(func="do_clean_images")
 
 
 def parse_arguments(args=None):
@@ -162,253 +162,282 @@ def get_config(configfile=None):
     return config
 
 
-def _connect(config, host, port=None):
-    """Connect to the host specified in the configuration file using its information.
+class RemoteBuilder():
 
-    In this method we allow to override the 'port' used by the server service.
-    """
-    port = port or config.get(host, "port")
-    connection_type = config.get(host, "type")
-    timeout = config.getint(host, "timeout", fallback=(60 * 60 * 3))  # 3h timeout
-    _log.info(
-        f"Connecting to {host}:{port} using {connection_type} with timeout: {timeout}"
-    )
+    config = None
+    host = None
+    args = None
+    port = None
+    conn = None
+    proc = None
+    remote_proc = None
 
-    if connection_type == "socket":
-        proc = subprocess.Popen([
-                "python3",
-                "server/server.py",
-                "--debug"
+    def __init__(self, config, host, args, port=None):
+        self.config = config
+        self.host = host
+        self.args = args
+        self.port = port
+
+    def _connect(self, port=None, start_server=False):
+        """Connect to the host specified in the configuration file using its information.
+
+        In this method we allow to override the 'port' used by the server service.
+        """
+        self.port = port or self.port or self.config.get(self.host, "port")
+        connection_type = self.config.get(self.host, "type")
+        timeout = self.config.getint(self.host, "timeout", fallback=(60 * 60 * 3))  # 3h timeout
+        _log.info(
+            f"Connecting to {self.host}:{self.port} using {connection_type} with timeout: {timeout}"
+        )
+
+        if connection_type == "socket":
+            if start_server:
+                self.proc = subprocess.Popen([
+                        "python3",
+                        "server/server.py",
+                        "--debug"
+                        ],
+                        cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
+                        env=os.environ.update(
+                            {"PYTHONPATH": os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))}
+                        )
+                )
+                time.sleep(1)
+            conn = rpyc.connect(
+                host=self.host,
+                port=self.port,
+                config={
+                    "sync_request_timeout": timeout,
+                },
+                keepalive=True,
+            )
+        else:
+            user = self.config.get(self.host, "user", fallback=None)
+            keyfile = self.config.get(self.host, "keyfile", fallback=None)
+            password = self.config.get(self.host, "password", fallback=None)
+            ssh_port = self.config.getint(self.host, "ssh_port", fallback=22)
+            _log.debug(
+                f"Connecting via ssh as {user} using the keyfile {keyfile} and "
+                f"or password: {'***' if password else password}"
+            )
+            from plumbum import SshMachine
+
+            # FYI here are is the doc about this object:
+            # https://plumbum.readthedocs.io/en/latest/api/machines.html#plumbum.machines.ssh_machine.SshMachine
+
+            rem = SshMachine(
+                self.host,
+                user=user,
+                keyfile=keyfile,
+                password=password,
+                port=ssh_port,
+                ssh_opts=[
+                    "-o UserKnownHostsFile=/dev/null",
+                    "-o StrictHostKeyChecking=no",
                 ],
-                cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
-                env={"PYTHONPATH": os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))}
+            )
+            conn = rpyc.ssh_connect(
+                remote_machine=rem,
+                remote_port=self.port,
+                config={
+                    "sync_request_timeout": timeout,
+                },
+            )
+            if start_server:
+                returncode, image_id, stderr = conn.root.install_remote_builder()
+                if returncode == 0:
+                    _log.info(f"{self.host.ljust(20)}    clone the remote_builder project sucessfully")
+                else:
+                    _log.info(f"{self.host.ljust(20)}    Failed to clone the remote_builder project")
+                    return returncode
+
+                self.remote_proc = conn.root.start_server()
+
+        return conn
+
+    def do_rpmbuild(self):
+        """Build remotly the specified source rpm
+
+
+        :arg conn: rpyc.core.protocol.Connection object connecting the client to the remote server.
+        :arg args: the argparse object returned by ``parse_arguments()``.
+
+        """
+        _log.debug(f"{self.host.ljust(20)} source_rpm:     %s", self.args.source_rpm)
+
+        if not os.path.exists(self.args.source_rpm):
+            raise OSError("File not found: %s", self.args.source_rpm)
+
+        self.conn.root.create_workdir()
+
+        _log.info(f"{self.host.ljust(20)} Creating the builder container")
+        returncode, image_id, stderr = self.conn.root.create_builder(
+            containerfile=self.config.get("container", "containerfile", fallback=None),
+            containerimage=self.config.get("container", "containerimage", fallback=None),
         )
-        time.sleep(1)
-        conn = rpyc.connect(
-            host=host,
-            port=port,
-            config={
-                "sync_request_timeout": timeout,
-            },
-            keepalive=True,
+        if returncode == 0:
+            _log.info(f"{self.host.ljust(20)}    Container created sucessfully")
+        else:
+            _log.info(f"{self.host.ljust(20)}    Failed to create container")
+            return returncode
+
+        _log.info(f"{self.host.ljust(20)} Starting the builder container")
+        returncode, container_id, stderr, new_port = self.conn.root.start_builder(
+            image_id, self.args.port
         )
-    else:
-        user = config.get(host, "user", fallback=None)
-        keyfile = config.get(host, "keyfile", fallback=None)
-        password = config.get(host, "password", fallback=None)
-        ssh_port = config.getint(host, "ssh_port", fallback=22)
-        _log.debug(
-            f"Connecting via ssh as {user} using the keyfile {keyfile} and "
-            f"or password: {'***' if password else password}"
+        if returncode == 0:
+            _log.info(f"{self.host.ljust(20)}    Container started sucessfully")
+        else:
+            _log.info(f"{self.host.ljust(20)}   Failed to start container")
+            print(stderr)
+            return returncode
+
+        time.sleep(2)
+
+        builder = self._connect(new_port)
+        builder.root.create_workdir()
+
+        srpm_filename = os.path.basename(self.args.source_rpm)
+
+        _log.info(
+            f"{self.host.ljust(20)} Uploading the source rpm:            {self.args.source_rpm}"
         )
-        from plumbum import SshMachine
+        with open(self.args.source_rpm, "rb") as stream:
+            builder.root.write_srpm(srpm_filename, stream.read())
 
-        # FYI here are is the doc about this object:
-        # https://plumbum.readthedocs.io/en/latest/api/machines.html#plumbum.machines.ssh_machine.SshMachine
-
-        rem = SshMachine(
-            host,
-            user=user,
-            keyfile=keyfile,
-            password=password,
-            port=ssh_port,
-            ssh_opts=[
-                "-o UserKnownHostsFile=/dev/null",
-                "-o StrictHostKeyChecking=no",
-            ],
+        _log.info(
+            f"{self.host.ljust(20)} Installing the source rpm:           {self.args.source_rpm}"
         )
-        conn = rpyc.ssh_connect(
-            remote_machine=rem,
-            remote_port=port,
-            config={
-                "sync_request_timeout": timeout,
-            },
+        returncode, outs, errs = builder.root.install_srpm(srpm_filename)
+        if returncode == 0:
+            _log.info(f"{self.host.ljust(20)}    Installed SRPM sucessfully")
+        else:
+            _log.info(f"{self.host.ljust(20)}    Failed to install the SRPM")
+            print(outs)
+            print(errs)
+            return returncode
+
+        _log.info(
+            f"{self.host.ljust(20)} Rebuilding the source rpm:           {self.args.source_rpm}"
+        )
+        returncode, outs, errs, source_rpm = builder.root.build_srpm()
+        if returncode == 0:
+            _log.info(f"{self.host.ljust(20)}    Rebuilt SRPM sucessfully")
+        else:
+            _log.info(f"{self.host.ljust(20)}    Failed to rebuild the SRPM")
+            print(outs)
+            print(errs)
+            return returncode
+
+        _log.info(f"{self.host.ljust(20)} Installing build dependencies of:    {source_rpm}")
+        returncode, outs, errs = builder.root.install_build_dependencies(source_rpm)
+        if returncode == 0:
+            _log.info(f"{self.host.ljust(20)}    Dependencies installed sucessfully")
+        else:
+            _log.info(f"{self.host.ljust(20)}    Failed to install dependencies")
+            print(outs)
+            print(errs)
+            return returncode
+
+        _log.info(f"{self.host.ljust(20)} Building the RPM from:               {source_rpm}")
+        returncode, outs, errs = builder.root.build_rpm(source_rpm)
+        if returncode == 0:
+            _log.info(f"{self.host.ljust(20)}    RPM built sucessfully")
+        else:
+            _log.info(f"{self.host.ljust(20)}    Failed to build the RPMs")
+        _log.debug(f"{self.host.ljust(20)} Return code: {returncode}")
+        with open(f"{srpm_filename}.{self.host}.stdout", "w") as stream:
+            stream.write(outs)
+        with open(f"{srpm_filename}.{self.host}.stderr", "w") as stream:
+            stream.write(errs)
+        _log.info(
+            f"{self.host.ljust(20)}    stdout log written in: {srpm_filename}.{self.host}.stdout"
+        )
+        _log.info(
+            f"{self.host.ljust(20)}    stderr log written in: {srpm_filename}.{self.host}.stderr"
         )
 
-    return conn
+        rpms = builder.root.exposed_retrieve_rpm_lists()
+        _log.debug(f"{self.host.ljust(20)} RPMs built: {' '.join(rpms)}")
 
+        for rpm in rpms:
+            _log.info(f"{self.host.ljust(20)} Retrieving file {rpm}")
+            with open(os.path.basename(rpm), "wb") as stream:
+                stream.write(builder.root.exposed_retrieve_file(rpm))
 
-def do_rpmbuild(config, host, conn, args):
-    """Build remotly the specified source rpm
+        _log.info(f"{self.host.ljust(20)} Stopping the builder container")
+        returncode, outs, errs = self.conn.root.stop_builder(container_id)
+        if returncode == 0:
+            _log.info(f"{self.host.ljust(20)}    Container stopped sucessfully")
+        else:
+            _log.info(f"{self.host.ljust(20)}    Failed to stop container")
+            print(errs)
+            return returncode
 
+    def do_clean_images(self):
+        """Clean remote_builders related images.
 
-    :arg conn: rpyc.core.protocol.Connection object connecting the client to the remote server.
-    :arg args: the argparse object returned by ``parse_arguments()``.
+        :arg conn: rpyc.core.protocol.Connection object connecting the client to the remote server.
+        :arg args: the argparse object returned by ``parse_arguments()``.
 
-    """
-    _log.debug(f"{host.ljust(20)} source_rpm:     %s", args.source_rpm)
+        """
+        _log.debug(f"{host.ljust(20)} image:       %s", args.image)
+        _log.debug(f"{host.ljust(20)} dry_run:     %s", args.dry_run)
 
-    if not os.path.exists(args.source_rpm):
-        raise OSError("File not found: %s", args.source_rpm)
+        returncode, outs, errs, images = conn.root.list_images()
+        if returncode == 0:
+            _log.info(f"{host.ljust(20)}    List of container retrieved sucessfully")
+        else:
+            _log.info(f"{host.ljust(20)}    Failed to retrieve the list of containers")
+            print(errs)
+            return returncode
 
-    conn.root.create_workdir()
+        if not images:
+            _log.info(f"{host.ljust(20)} No relevant images retrieved on the host {host}")
+            return 0
 
-    _log.info(f"{host.ljust(20)} Creating the builder container")
-    returncode, image_id, stderr = conn.root.create_builder(
-        containerfile=config.get("container", "containerfile", fallback=None),
-        containerimage=config.get("container", "containerimage", fallback=None),
-    )
-    if returncode == 0:
-        _log.info(f"{host.ljust(20)}    Container created sucessfully")
-    else:
-        _log.info(f"{host.ljust(20)}    Failed to create container")
-        return returncode
+        if args.dry_run:
+            if args.image:
+                if args.image in images:
+                    _log.info(f"{host.ljust(20)} Would delete image {args.image}")
+                else:
+                    _log.info(
+                        f"{host.ljust(20)} Container {args.image} not found on the server."
+                    )
+            else:
+                _log.info(f"{host.ljust(20)} Would delete image(s): {' '.join(images)}")
+        else:
+            if args.image:
+                if args.image in images:
+                    outcodes = conn.root.clean_images([args.image])
+                else:
+                    _log.info(
+                        f"{host.ljust(20)} Container {args.image} not found on the server."
+                    )
+            else:
+                outcodes = conn.root.clean_images(images)
 
-    _log.info(f"{host.ljust(20)} Starting the builder container")
-    returncode, container_id, stderr, new_port = conn.root.start_builder(
-        image_id, args.port
-    )
-    if returncode == 0:
-        _log.info(f"{host.ljust(20)}    Container started sucessfully")
-    else:
-        _log.info(f"{host.ljust(20)}   Failed to start container")
-        print(stderr)
-        return returncode
-
-    time.sleep(2)
-
-    builder = _connect(config, host, new_port)
-    builder.root.create_workdir()
-
-    srpm_filename = os.path.basename(args.source_rpm)
-
-    _log.info(
-        f"{host.ljust(20)} Uploading the source rpm:            {args.source_rpm}"
-    )
-    with open(args.source_rpm, "rb") as stream:
-        builder.root.write_srpm(srpm_filename, stream.read())
-
-    _log.info(
-        f"{host.ljust(20)} Installing the source rpm:           {args.source_rpm}"
-    )
-    returncode, outs, errs = builder.root.install_srpm(srpm_filename)
-    if returncode == 0:
-        _log.info(f"{host.ljust(20)}    Installed SRPM sucessfully")
-    else:
-        _log.info(f"{host.ljust(20)}    Failed to install the SRPM")
-        print(outs)
-        print(errs)
-        return returncode
-
-    _log.info(
-        f"{host.ljust(20)} Rebuilding the source rpm:           {args.source_rpm}"
-    )
-    returncode, outs, errs, source_rpm = builder.root.build_srpm()
-    if returncode == 0:
-        _log.info(f"{host.ljust(20)}    Rebuilt SRPM sucessfully")
-    else:
-        _log.info(f"{host.ljust(20)}    Failed to rebuild the SRPM")
-        print(outs)
-        print(errs)
-        return returncode
-
-    _log.info(f"{host.ljust(20)} Installing build dependencies of:    {source_rpm}")
-    returncode, outs, errs = builder.root.install_build_dependencies(source_rpm)
-    if returncode == 0:
-        _log.info(f"{host.ljust(20)}    Dependencies installed sucessfully")
-    else:
-        _log.info(f"{host.ljust(20)}    Failed to install dependencies")
-        print(outs)
-        print(errs)
-        return returncode
-
-    _log.info(f"{host.ljust(20)} Building the RPM from:               {source_rpm}")
-    returncode, outs, errs = builder.root.build_rpm(source_rpm)
-    if returncode == 0:
-        _log.info(f"{host.ljust(20)}    RPM built sucessfully")
-    else:
-        _log.info(f"{host.ljust(20)}    Failed to build the RPMs")
-    _log.debug(f"{host.ljust(20)} Return code: {returncode}")
-    with open(f"{srpm_filename}.{host}.stdout", "w") as stream:
-        stream.write(outs)
-    with open(f"{srpm_filename}.{host}.stderr", "w") as stream:
-        stream.write(errs)
-    _log.info(
-        f"{host.ljust(20)}    stdout log written in: {srpm_filename}.{host}.stdout"
-    )
-    _log.info(
-        f"{host.ljust(20)}    stderr log written in: {srpm_filename}.{host}.stderr"
-    )
-
-    rpms = builder.root.exposed_retrieve_rpm_lists()
-    _log.debug(f"{host.ljust(20)} RPMs built: {' '.join(rpms)}")
-
-    for rpm in rpms:
-        _log.info(f"{host.ljust(20)} Retrieving file {rpm}")
-        with open(os.path.basename(rpm), "wb") as stream:
-            stream.write(builder.root.exposed_retrieve_file(rpm))
-
-    _log.info(f"{host.ljust(20)} Stopping the builder container")
-    returncode, outs, errs = conn.root.stop_builder(container_id)
-    if returncode == 0:
-        _log.info(f"{host.ljust(20)}    Container stopped sucessfully")
-    else:
-        _log.info(f"{host.ljust(20)}    Failed to stop container")
-        print(errs)
-        return returncode
-
-
-def do_clean_images(config, host, conn, args):
-    """Clean remote_builders related images.
-
-    :arg conn: rpyc.core.protocol.Connection object connecting the client to the remote server.
-    :arg args: the argparse object returned by ``parse_arguments()``.
-
-    """
-    _log.debug(f"{host.ljust(20)} image:       %s", args.image)
-    _log.debug(f"{host.ljust(20)} dry_run:     %s", args.dry_run)
-
-    returncode, outs, errs, images = conn.root.list_images()
-    if returncode == 0:
-        _log.info(f"{host.ljust(20)}    List of container retrieved sucessfully")
-    else:
-        _log.info(f"{host.ljust(20)}    Failed to retrieve the list of containers")
-        print(errs)
-        return returncode
-
-    if not images:
-        _log.info(f"{host.ljust(20)} No relevant images retrieved on the host {host}")
-        return 0
-
-    if args.dry_run:
-        if args.image:
-            if args.image in images:
-                _log.info(f"{host.ljust(20)} Would delete image {args.image}")
+            if set(outcodes) != set([0]):
+                _log.info(
+                    f"{host.ljust(20)} Failed to clean all the container images on the server."
+                )
             else:
                 _log.info(
-                    f"{host.ljust(20)} Container {args.image} not found on the server."
+                    f"{host.ljust(20)} Successfully cleaned all the container images on the server."
                 )
-        else:
-            _log.info(f"{host.ljust(20)} Would delete image(s): {' '.join(images)}")
-    else:
-        if args.image:
-            if args.image in images:
-                outcodes = conn.root.clean_images([args.image])
-            else:
-                _log.info(
-                    f"{host.ljust(20)} Container {args.image} not found on the server."
-                )
-        else:
-            outcodes = conn.root.clean_images(images)
-
-        if set(outcodes) != set([0]):
-            _log.info(
-                f"{host.ljust(20)} Failed to clean all the container images on the server."
-            )
-        else:
-            _log.info(
-                f"{host.ljust(20)} Successfully cleaned all the container images on the server."
-            )
 
 
 def process_host(arg_list):
     """Process the host based on the arguments provided to the CLI."""
     config, host, args = arg_list
     return_code = 0
-    conn = _connect(config, host)
+    remote_builder = RemoteBuilder(config, host, args)
+    remote_builder.conn = remote_builder._connect(start_server=True)
     # Act based on the arguments given
     try:
-        args.func(config, host, conn, args)
+        print(args.func)
+        method = getattr(remote_builder, args.func)
+        method()
     except KeyboardInterrupt:
         print("\nInterrupted by user.")
         return_code = 1
@@ -419,6 +448,10 @@ def process_host(arg_list):
         print("Error: {0}".format(err))
         logging.exception("Generic error catched:")
         return_code = 2
+    finally:
+        if remote_builder.proc:
+            print("Stopping server process")
+            remote_builder.proc.kill()
 
     # if return_code != 0:
     return return_code
