@@ -442,8 +442,11 @@ def main():
                 # Any return code that indicates a failure is good enough
                 return_code = rtn_code
     else:
-        p = Pool(5)
         hosts = [it[1] for it in config.items("hosts")]
+        pool_size = len(hosts) + 1
+        if pool_size > cpu_count():
+            pool_size = cpu_count() + 1
+        p = Pool(pool_size)
         return_code = p.map(process_host, itertools.product([config], hosts, [args]))
         return_code = 1 if any(return_code) else 0
 
