@@ -1,11 +1,12 @@
 import argparse
 import configparser
 import itertools
+import json
 import logging
-from multiprocessing import Pool
+from multiprocessing import cpu_count, Pool
 import os
 import sys
-import time
+import tempfile
 
 import rpyc
 
@@ -161,6 +162,105 @@ def get_config(configfile=None):
     return config
 
 
+def _establish_connection(config, host, with_sources=True):
+    connection_type = config.get(host, "type")
+    timeout = config.getint(host, "timeout", fallback=(60 * 60 * 3))  # 3h timeout
+    _log.info(
+        f"Starting builder containers on {host} using {connection_type} with timeout: {timeout}"
+    )
+    import plumbum
+
+    if connection_type == "socket":
+        rem = plumbum.local
+    else:
+        user = config.get(host, "user", fallback=None)
+        keyfile = config.get(host, "keyfile", fallback=None)
+        password = config.get(host, "password", fallback=None)
+        ssh_port = config.getint(host, "ssh_port", fallback=22)
+        _log.debug(
+            f"Connecting via ssh as {user} using the keyfile {keyfile} and "
+            f"or password: {'***' if password else password}"
+        )
+
+        # FYI here are is the doc about this object:
+        # https://plumbum.readthedocs.io/en/latest/api/machines.html#plumbum.machines.ssh_machine.SshMachine
+
+        rem = plumbum.SshMachine(
+            host,
+            user=user,
+            keyfile=keyfile,
+            password=password,
+            port=ssh_port,
+            ssh_opts=[
+                "-o UserKnownHostsFile=/dev/null",
+                "-o StrictHostKeyChecking=no",
+            ],
+        )
+
+    return rem
+
+
+def _start_server(config, host, builder_port=18862, with_sources=True):
+    """Connect to the host specified in the configuration file using its information.
+
+    In this method we allow to override the 'port' used by the server service.
+    """
+
+    rem = _establish_connection(config, host, with_sources=with_sources)
+
+    containerfile = config.get("container", "containerfile", fallback=None)
+    containerimage = config.get("container", "containerimage", fallback=None)
+
+    if containerfile:
+        with tempfile.TemporaryDirectory(prefix="remote_builder-") as tempdirname:
+            containerfilename = os.path.join(tempdirname.name, "Containerfile_builder")
+            _log.info(
+                f"Writing down the Dockerfile for builders at {containerfilename}"
+            )
+            with open(containerfilename, "wb") as out_file:
+                out_file.write(containerfile.encode("utf-8"))
+
+            _log.info("Building builder container")
+            cmd = [
+                "build",
+                "-f",
+                containerfilename,
+                "--rm",
+                "-t",
+                "rs_builder",
+            ]
+    elif containerimage:
+        # Use the specified container image
+        _log.info(f"Pulling the builder container: {containerimage}")
+        cmd = ["pull", containerimage]
+
+    returncode, outs, errs = rem["podman"].run(cmd)
+    if returncode == 0:
+        _log.info(f"{host.ljust(20)}    Container created sucessfully")
+    else:
+        raise exceptions.BaseRemoteBuilderError(
+            f"{host.ljust(20)}   Failed to create container"
+        )
+
+    image_id = outs.strip().split("\n")[-1]
+    _log.info(f"Container image built: {image_id}")
+
+    _log.info(f"{host.ljust(20)} Starting the builder container")
+    cmd = ["run", "-d", "-p", f"{builder_port}:18861/tcp", "--rm", image_id]
+    returncode, outs, errs = rem["podman"].run(cmd)
+    container_id = outs.strip()
+
+    if returncode == 0:
+        _log.info(f"{host.ljust(20)}    Container started sucessfully")
+    else:
+        print(errs)
+        raise exceptions.BaseRemoteBuilderError(
+            f"{host.ljust(20)}   Failed to start container"
+        )
+
+    return (rem, container_id)
+
+
 def _connect(config, host, port=None):
     """Connect to the host specified in the configuration file using its information.
 
@@ -183,30 +283,7 @@ def _connect(config, host, port=None):
             keepalive=True,
         )
     else:
-        user = config.get(host, "user", fallback=None)
-        keyfile = config.get(host, "keyfile", fallback=None)
-        password = config.get(host, "password", fallback=None)
-        ssh_port = config.getint(host, "ssh_port", fallback=22)
-        _log.debug(
-            f"Connecting via ssh as {user} using the keyfile {keyfile} and "
-            f"or password: {'***' if password else password}"
-        )
-        from plumbum import SshMachine
-
-        # FYI here are is the doc about this object:
-        # https://plumbum.readthedocs.io/en/latest/api/machines.html#plumbum.machines.ssh_machine.SshMachine
-
-        rem = SshMachine(
-            host,
-            user=user,
-            keyfile=keyfile,
-            password=password,
-            port=ssh_port,
-            ssh_opts=[
-                "-o UserKnownHostsFile=/dev/null",
-                "-o StrictHostKeyChecking=no",
-            ],
-        )
+        rem = _establish_connection(config, host)
         conn = rpyc.ssh_connect(
             remote_machine=rem,
             remote_port=port,
@@ -218,7 +295,7 @@ def _connect(config, host, port=None):
     return conn
 
 
-def do_rpmbuild(config, host, conn, args):
+def do_rpmbuild(config, host, args):
     """Build remotly the specified source rpm
 
 
@@ -231,31 +308,8 @@ def do_rpmbuild(config, host, conn, args):
     if not os.path.exists(args.source_rpm):
         raise OSError("File not found: %s", args.source_rpm)
 
-    conn.root.create_workdir()
-
-    _log.info(f"{host.ljust(20)} Creating the builder container")
-    returncode, image_id, stderr = conn.root.create_builder(
-        containerfile=config.get("container", "containerfile", fallback=None),
-        containerimage=config.get("container", "containerimage", fallback=None),
-    )
-    if returncode == 0:
-        _log.info(f"{host.ljust(20)}    Container created sucessfully")
-    else:
-        _log.info(f"{host.ljust(20)}    Failed to create container")
-        return returncode
-
-    _log.info(f"{host.ljust(20)} Starting the builder container")
-    returncode, container_id, stderr, new_port = conn.root.start_builder(
-        image_id, args.port
-    )
-    if returncode == 0:
-        _log.info(f"{host.ljust(20)}    Container started sucessfully")
-    else:
-        _log.info(f"{host.ljust(20)}   Failed to start container")
-        print(stderr)
-        return returncode
-
-    time.sleep(2)
+    new_port = int(config.get(host, "port")) + 1
+    rem, container_id = _start_server(config, host, new_port)
 
     builder = _connect(config, host, new_port)
     builder.root.create_workdir()
@@ -329,7 +383,8 @@ def do_rpmbuild(config, host, conn, args):
             stream.write(builder.root.exposed_retrieve_file(rpm))
 
     _log.info(f"{host.ljust(20)} Stopping the builder container")
-    returncode, outs, errs = conn.root.stop_builder(container_id)
+    cmd = ["stop", container_id]
+    returncode, outs, errs = rem["podman"].run(cmd)
     if returncode == 0:
         _log.info(f"{host.ljust(20)}    Container stopped sucessfully")
     else:
@@ -338,7 +393,7 @@ def do_rpmbuild(config, host, conn, args):
         return returncode
 
 
-def do_clean_images(config, host, conn, args):
+def do_clean_images(config, host, args):
     """Clean remote_builders related images.
 
     :arg conn: rpyc.core.protocol.Connection object connecting the client to the remote server.
@@ -348,17 +403,45 @@ def do_clean_images(config, host, conn, args):
     _log.debug(f"{host.ljust(20)} image:       %s", args.image)
     _log.debug(f"{host.ljust(20)} dry_run:     %s", args.dry_run)
 
-    returncode, outs, errs, images = conn.root.list_images()
+    rem = _establish_connection(config, host, with_sources=False)
+
+    cmd = ["images", "--format", "json"]
+    returncode, outs, errs = rem["podman"].run(cmd)
     if returncode == 0:
         _log.info(f"{host.ljust(20)}    List of container retrieved sucessfully")
     else:
-        _log.info(f"{host.ljust(20)}    Failed to retrieve the list of containers")
         print(errs)
-        return returncode
+        raise exceptions.BaseRemoteBuilderError(
+            f"{host.ljust(20)}    Failed to retrieve the list of containers"
+        )
+
+    images = []
+    if returncode == 0:
+        data = json.loads(outs)
+        for image in data:
+            for name in image.get("Names", []):
+                if "rs_builder" in name:
+                    images.append(image.get("Id"))
+                    break
+    _log.debug(f"Images Id retrieved: {' '.join(images)}")
 
     if not images:
         _log.info(f"{host.ljust(20)} No relevant images retrieved on the host {host}")
         return 0
+
+    def _clean_images(images):
+        """Delete the images specified in the provided list."""
+        _log.info(f"Deleting the podman images: {' '.join(images)}")
+        outcodes = []
+        for image in images:
+            cmd = ["podman", "rmi", image, "-f"]
+            returncode, _, _ = rem["podman"].run(cmd)
+            outcodes.append(returncode)
+            _log.debug(
+                f"Deleting podman images {image} finished with the code: {returncode}"
+            )
+
+        return outcodes
 
     if args.dry_run:
         if args.image:
@@ -373,13 +456,13 @@ def do_clean_images(config, host, conn, args):
     else:
         if args.image:
             if args.image in images:
-                outcodes = conn.root.clean_images([args.image])
+                outcodes = _clean_images([args.image])
             else:
                 _log.info(
                     f"{host.ljust(20)} Container {args.image} not found on the server."
                 )
         else:
-            outcodes = conn.root.clean_images(images)
+            outcodes = _clean_images(images)
 
         if set(outcodes) != set([0]):
             _log.info(
@@ -395,10 +478,9 @@ def process_host(arg_list):
     """Process the host based on the arguments provided to the CLI."""
     config, host, args = arg_list
     return_code = 0
-    conn = _connect(config, host)
     # Act based on the arguments given
     try:
-        args.func(config, host, conn, args)
+        return_code = args.func(config, host, args)
     except KeyboardInterrupt:
         print("\nInterrupted by user.")
         return_code = 1
@@ -410,7 +492,6 @@ def process_host(arg_list):
         logging.exception("Generic error catched:")
         return_code = 2
 
-    # if return_code != 0:
     return return_code
 
 

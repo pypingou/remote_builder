@@ -1,5 +1,4 @@
 import argparse
-import json
 import logging
 import os
 import subprocess
@@ -83,62 +82,6 @@ class RemoteBuilderService(rpyc.Service):
         if not self.tmpdirname:
             _log.info("No workding directory set")
             raise exceptions.BaseRemoteBuilderError("No working directory set")
-
-    def exposed_create_builder(self, containerfile=None, containerimage=None):
-        """Create a podman container which will be to build the package."""
-        # Use the specified containerfile
-        if containerfile:
-            containerfilename = os.path.join(
-                self.tmpdirname.name, "Containerfile_builder"
-            )
-            _log.info(
-                f"Writing down the Dockerfile for builders at {containerfilename}"
-            )
-            with open(containerfilename, "wb") as out_file:
-                out_file.write(containerfile.encode("utf-8"))
-
-            _log.info("Building builder container")
-            cmd = [
-                "podman",
-                "build",
-                "-f",
-                containerfilename,
-                "--rm",
-                "-t",
-                "rs_builder",
-            ]
-            returncode, outs, errs = _run_command(cmd)
-        elif containerimage:
-            # Use the specified container image
-            _log.info(f"Pulling the builder container: {containerimage}")
-            cmd = ["podman", "pull", containerimage]
-            returncode, outs, errs = _run_command(cmd)
-
-        image_id = outs.split("\n")[-1]
-        _log.info(f"Container image built: {image_id}")
-
-        return [returncode, image_id, errs]
-
-    def exposed_start_builder(self, image_id, running_port=18861):
-        """Start a podman container which will be to build the package."""
-
-        _log.info("Starting builder container")
-        new_port = running_port + 1
-        cmd = ["podman", "run", "-d", "-p", f"{new_port}:18861/tcp", "--rm", image_id]
-        returncode, outs, errs = _run_command(cmd)
-        _log.info(f"Container started: {outs}")
-
-        return [returncode, outs, errs, new_port]
-
-    def exposed_stop_builder(self, container_id):
-        """Stop a running podman container."""
-
-        _log.info("Stopping builder container")
-        cmd = ["podman", "stop", container_id]
-        returncode, outs, errs = _run_command(cmd)
-        _log.info(f"Container stopped: {outs}")
-
-        return [returncode, outs, errs]
 
     def exposed_create_workdir(self):
         """Create a temporary directory to be used as a work directory."""
@@ -333,40 +276,6 @@ class RemoteBuilderService(rpyc.Service):
         _log.info(f"Retrieving the file {fullpath}")
         with open(fullpath, "rb") as stream:
             return stream.read()
-
-    @needs_podman
-    def exposed_list_images(self):
-        """Returns the list of image IDs for images related to remote_builder."""
-        _log.info("Retrieving the list of podman images")
-        cmd = ["podman", "images", "--format", "json"]
-        returncode, outs, errs = _run_command(cmd)
-
-        output = []
-        if returncode == 0:
-            data = json.loads(outs)
-            for image in data:
-                for name in image.get("Names", []):
-                    if "rs_builder" in name:
-                        output.append(image.get("Id"))
-                        break
-        _log.debug(f"Images Id retrieved: {' '.join(output)}")
-
-        return [returncode, outs, errs, output]
-
-    @needs_podman
-    def exposed_clean_images(self, images):
-        """Delete the images specified in the provided list."""
-        _log.info(f"Deleting the podman images: {' '.join(images)}")
-        outcodes = []
-        for image in images:
-            cmd = ["podman", "rmi", image, "-f"]
-            returncode, _, _ = _run_command(cmd)
-            outcodes.append(returncode)
-            _log.debug(
-                f"Deleting podman images {image} finished with the code: {returncode}"
-            )
-
-        return outcodes
 
 
 def parse_arguments(args=None):
