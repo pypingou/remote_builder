@@ -7,7 +7,7 @@ setup(
     description="A simple server/client RPC program to easily do RPM build remotely",
     # Possible options are at https://pypi.python.org/pypi?%3Aaction=list_classifiers
     classifiers=[
-        "Development Status :: 3 - Beta",
+        "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
         "Intended Audience :: System Administrators",
         "License :: OSI Approved :: BSD License",
