@@ -17,3 +17,6 @@ local) server.
 More information about the project can be found in the `docs` folder which also
 contains a `mkdocs` project. If you have `mkdocs` install you can browse locally
 the documentation using `mkdocs --serve`.
+
+
+Full documentation about the project can be found at: https://remote-builder.readthedocs.io/en/latest/
