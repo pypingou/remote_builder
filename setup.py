@@ -3,7 +3,7 @@ from setuptools import setup
 
 setup(
     name="remote_builder",
-    version="0.0.1",
+    version="0.2",
     description="A simple server/client RPC program to easily do RPM build remotely",
     # Possible options are at https://pypi.python.org/pypi?%3Aaction=list_classifiers
     classifiers=[
