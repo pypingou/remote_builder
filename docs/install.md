@@ -37,25 +37,15 @@ Running remote builder
 
 ### Running the server
 
-To run the server you will simply have to run either:
-
-- the `remote_builder_server` CLI, if you choose to install remote builder from pip.
-or
-- `PYTHONPATH=. python remote_builder/server/server.py` if you choose to run
-  remote builder from git. Run that command from the top level of the git
-  repository.
-
-In both cases, you can use `--help` for more information about the different
-options and arguments available to tweak how the server is ran.
+The client will use podman to create and start a builder container on the server.
+That container will run the remote-builder server that the client will connect
+to to rebuild the SRPM and build the RPM.
 
 - **Dependencies**
 
 Here is the list of dependencies for the server:
 
-- RPyC (python3-rpyc)
 - podman
-- rpm-build
-- dnf-plugins-core
 
 ### Running the CLI
 

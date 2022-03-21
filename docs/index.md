@@ -30,8 +30,9 @@ Remote builder has two actions:
 
 #### Building the RPMs from a source RPM
 
-The CLI connects to the server running on one or more hosts. It asks the server
-to create a container on that host running the remote builder server code.
+The CLI connects to the server either via SSH or using a subprocess if the
+connection type to the host is `socket`. It creates a container there running
+the remote builder server code.
 The CLI then connects to that container, and uploads the SRPM specified by the
 user into that container. It can then extract the content of the SRPM and
 rebuild that SRPM. Once the SRPM has been rebuilt, it will install the build
@@ -45,7 +46,6 @@ logs are exported.
 The CLI connects to the server running on one or more hosts. It then retrieves
 the list of podman images available on these hosts and will delete all images
 that were created by remote builder.
-
 
 #### Workflow diagram
 
