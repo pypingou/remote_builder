@@ -88,6 +88,14 @@ def _validate_config(config):
                 raise configparser.NoOptionError(
                     f"Host {host} has no user or keyfile specified"
                 )
+            if not config.get(host, "local_user"):
+                raise configparser.NoOptionError(
+                    f"Host {host} has no local_user specified"
+                )
+            if not config.get(host, "local_host"):
+                raise configparser.NoOptionError(
+                    f"Host {host} has no local_host specified"
+                )
 
 
 def get_config(configfile=None):
@@ -218,10 +226,12 @@ def process_host(arg_list):
         if connection_type == "ssh":
             # sshfs mount the target folder
             rem["mkdir"].run(["-p", working_directory])
-            _log.debug("Starting sshfs")
+            local_user = config.get(host, "local_user")
+            local_host = config.get(host, "local_host")
+            _log.debug("Starting sshfs to %s@%s", local_user, local_host)
             p = rem2["sshfs"].run(
                 [
-                    f"pierrey@192.168.1.90:{args.working_directory}",
+                    f"{local_user}@{local_host}:{args.working_directory}",
                     working_directory,
                     "-o",
                     f"IdentityFile=/{remote_home}/accelerator",

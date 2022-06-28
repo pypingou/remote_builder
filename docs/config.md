@@ -32,6 +32,8 @@ port=       18861
 timeout=    14400
 user=       guest
 password=   password
+local_user= pingou
+local_host= 192.168.1.90
 ```
 
 Here are some explanations:
@@ -91,6 +93,19 @@ There are a few options available for this connection type:
 * `keyfile` the path to the ssh key to use to connect to the remote server
 
 **Either a `user` or a `keyfile` must be specified for host of type `ssh`.**
+
+## The accelerator options
+
+The accelerator script adds two options to the list of options. Both of these
+options are required for the accelerator script (for remote host, i.e. where
+`types` is `ssh`) and **optional for remote_builder**.
+
+These two options are:
+
+* `local_user` is the username of the client to connect to with when the remote
+  host connects back to the client (for the sshfs mount).
+* `local_host` is the hostname or IP address of the client to connect to with
+  from the remote host (for the sshfs mount).
 
 ## The container section
 
