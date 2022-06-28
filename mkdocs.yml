@@ -8,6 +8,7 @@ nav:
   - Home: index.md
   - Installing/Running: install.md
   - Configuration file: config.md
+  - Accelerator: accelerator.md
 
 theme:
   name: readthedocs
