@@ -236,7 +236,7 @@ def _start_server(config, host, builder_port=18862, with_sources=True):
 
     returncode, outs, errs = rem["podman"].run(cmd)
     if returncode == 0:
-        _log.info(f"{host.ljust(20)}    Container created sucessfully")
+        _log.info(f"{host.ljust(20)}    Container created successfully")
     else:
         raise exceptions.BaseRemoteBuilderError(
             f"{host.ljust(20)}   Failed to create container"
@@ -251,7 +251,7 @@ def _start_server(config, host, builder_port=18862, with_sources=True):
     container_id = outs.strip()
 
     if returncode == 0:
-        _log.info(f"{host.ljust(20)}    Container started sucessfully")
+        _log.info(f"{host.ljust(20)}    Container started successfully")
     else:
         print(errs)
         raise exceptions.BaseRemoteBuilderError(
@@ -327,7 +327,7 @@ def do_rpmbuild(config, host, args):
     )
     returncode, outs, errs = builder.root.install_srpm(srpm_filename)
     if returncode == 0:
-        _log.info(f"{host.ljust(20)}    Installed SRPM sucessfully")
+        _log.info(f"{host.ljust(20)}    Installed SRPM successfully")
     else:
         _log.info(f"{host.ljust(20)}    Failed to install the SRPM")
         print(outs)
@@ -339,7 +339,7 @@ def do_rpmbuild(config, host, args):
     )
     returncode, outs, errs, source_rpm = builder.root.build_srpm()
     if returncode == 0:
-        _log.info(f"{host.ljust(20)}    Rebuilt SRPM sucessfully")
+        _log.info(f"{host.ljust(20)}    Rebuilt SRPM successfully")
     else:
         _log.info(f"{host.ljust(20)}    Failed to rebuild the SRPM")
         print(outs)
@@ -349,7 +349,7 @@ def do_rpmbuild(config, host, args):
     _log.info(f"{host.ljust(20)} Installing build dependencies of:    {source_rpm}")
     returncode, outs, errs = builder.root.install_build_dependencies(source_rpm)
     if returncode == 0:
-        _log.info(f"{host.ljust(20)}    Dependencies installed sucessfully")
+        _log.info(f"{host.ljust(20)}    Dependencies installed successfully")
     else:
         _log.info(f"{host.ljust(20)}    Failed to install dependencies")
         print(outs)
@@ -359,7 +359,7 @@ def do_rpmbuild(config, host, args):
     _log.info(f"{host.ljust(20)} Building the RPM from:               {source_rpm}")
     returncode, outs, errs = builder.root.build_rpm(source_rpm)
     if returncode == 0:
-        _log.info(f"{host.ljust(20)}    RPM built sucessfully")
+        _log.info(f"{host.ljust(20)}    RPM built successfully")
     else:
         _log.info(f"{host.ljust(20)}    Failed to build the RPMs")
     _log.debug(f"{host.ljust(20)} Return code: {returncode}")
@@ -386,7 +386,7 @@ def do_rpmbuild(config, host, args):
     cmd = ["stop", container_id]
     returncode, outs, errs = rem["podman"].run(cmd)
     if returncode == 0:
-        _log.info(f"{host.ljust(20)}    Container stopped sucessfully")
+        _log.info(f"{host.ljust(20)}    Container stopped successfully")
     else:
         _log.info(f"{host.ljust(20)}    Failed to stop container")
         print(errs)
@@ -408,7 +408,7 @@ def do_clean_images(config, host, args):
     cmd = ["images", "--format", "json"]
     returncode, outs, errs = rem["podman"].run(cmd)
     if returncode == 0:
-        _log.info(f"{host.ljust(20)}    List of container retrieved sucessfully")
+        _log.info(f"{host.ljust(20)}    List of container retrieved successfully")
     else:
         print(errs)
         raise exceptions.BaseRemoteBuilderError(
